@@ -1,0 +1,56 @@
+/**
+ * Unipile Integration Service (Hosted Auth Wizard)
+ * Doc: https://developer.unipile.com/docs/hosted-auth
+ */
+
+export interface HostedAuthRequest {
+  type: 'create' | 'reconnect';
+  providers: string[] | '*';
+  api_url: string;
+  expiresOn: string;
+  notify_url?: string;
+  name?: string; // internal user ID
+}
+
+export interface HostedAuthResponse {
+  object: 'HostedAuthURL';
+  url: string;
+}
+
+/**
+ * IMPORTANTE: Conforme a documentação (Step 1), a chamada de API para gerar
+ * o link do Hosted Auth Wizard DEVE ser feita a partir de um processo de backend
+ * intermediário para proteger a X-API-KEY. Nunca exponha sua chave no frontend.
+ */
+export const getHostedAuthLink = async (payload: Partial<HostedAuthRequest>): Promise<HostedAuthResponse> => {
+  try {
+    const response = await fetch('/api/v1/hosted/accounts/link', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Erro na requisição: ${response.status} - ${errorText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Erro ao chamar o backend para Hosted Auth:', error);
+    throw error;
+  }
+};
+
+/**
+ * Conforme o Step 3 da documentação, o redirecionamento deve ser automático.
+ */
+export const redirectToHostedAuth = (url: string) => {
+  // Recomendamos abrir em uma nova aba ou redirecionar a atual
+  // A documentação diz: "implement an automatic redirection mechanism"
+  // E também: "We do not recommend embedding our link in an iframe"
+  window.open(url, '_blank', 'noopener,noreferrer');
+};

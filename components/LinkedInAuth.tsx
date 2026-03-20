@@ -1,17 +1,20 @@
 
 import React, { useState } from 'react';
 import { Linkedin, X, ExternalLink, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { getHostedAuthLink, redirectToHostedAuth } from '../services/unipileService';
 
 interface LinkedInAuthProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (account: any) => void;
+  userId?: string;
 }
 
-const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess }) => {
+const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess, userId }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [step, setStep] = useState<'initial' | 'connecting' | 'success'>('initial');
+  const [step, setStep] = useState<'initial' | 'connecting' | 'redirected' | 'success'>('initial');
+  const [hostedUrl, setHostedUrl] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -21,29 +24,40 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess 
     setStep('connecting');
 
     try {
-      // De acordo com https://developer.unipile.com/docs/hosted-auth
-      // 1. O backend deve criar uma Hosted Session na API do Unipile
-      // POST https://api.unipile.com/account/hosted_session
-      // 2. O Unipile retorna uma URL (url) para redirecionamento
+      // Step 1 & 2: O backend deve criar o link do Hosted Auth Wizard
+      const response = await getHostedAuthLink({
+        type: 'create',
+        providers: ['LINKEDIN'],
+        api_url: 'https://api.unipile.com',
+        expiresOn: new Date(Date.now() + 3600000).toISOString(), // expira em 1h
+        name: userId || 'anonymous_user' // ID interno do usuário (Step 1)
+      });
 
-      // Simulação de chamada de API para obter a URL do Hosted Auth
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      setHostedUrl(response.url);
       
-      // No mundo real, aqui você redirecionaria:
-      // window.location.href = hostedSessionUrl;
+      // Step 3: Redirecionamento automático recomendado
+      redirectToHostedAuth(response.url);
       
-      // Para fins de demonstração na UI, vamos simular o sucesso
-      setStep('success');
-      if (onSuccess) {
-        onSuccess({
-          id: Math.random().toString(36).substr(2, 9),
-          name: 'Nova Conta LinkedIn',
-          status: 'Ativo',
-          initials: 'NC'
-        });
-      }
+      setStep('redirected');
+      
+      // Simulação do Step 4 (receber o webhook e atualizar o frontend)
+      // No fluxo real, após o redirecionamento bem sucedido, o usuário voltaria para o seu app 
+      // via success_redirect_url ou seu backend receberia o notify_url.
+      
+      setTimeout(() => {
+         setStep('success');
+         if (onSuccess) {
+            onSuccess({
+              id: Math.random().toString(36).substr(2, 9),
+              name: 'LinkedIn - Conectado via Wizard',
+              status: 'Ativo',
+              initials: 'LW'
+            });
+          }
+      }, 5000); // Simulando o tempo de espera pela conclusão do wizard em outra aba
+
     } catch (err) {
-      setError('Ocorreu um erro ao iniciar a autenticação. Tente novamente.');
+      setError('Ocorreu um erro ao iniciar a autenticação (Hosted Auth Wizard). Tente novamente.');
       setStep('initial');
     } finally {
       setLoading(false);
@@ -55,7 +69,10 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess 
       <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border border-gray-100">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-          <h3 className="font-semibold text-gray-900">Conectar LinkedIn</h3>
+          <div className="flex flex-col">
+            <h3 className="font-semibold text-gray-900 leading-none mb-1">Conectar via Hosted Auth Wizard</h3>
+            <span className="text-[10px] text-gray-500 font-medium">Fluxo Unipile Recomendado</span>
+          </div>
           <button 
             onClick={onClose}
             className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
@@ -71,9 +88,9 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess 
               <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm border border-blue-100">
                 <Linkedin className="w-8 h-8" />
               </div>
-              <h4 className="text-xl font-bold text-gray-900 mb-2">Autenticação Segura</h4>
+              <h4 className="text-xl font-bold text-gray-900 mb-2">Conexão Simplificada</h4>
               <p className="text-gray-500 mb-8 leading-relaxed">
-                Utilizamos o Unipile para conectar sua conta do LinkedIn com segurança. Você será redirecionado para a página de login oficial.
+                Usamos o <strong>Hosted Auth Wizard</strong> do Unipile para fornecer uma interface segura e otimizada de login. 
               </p>
               
               {error && (
@@ -92,14 +109,14 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess 
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
                   <>
-                    Iniciar Conexão
+                    Gerar Link de Conexão
                     <ExternalLink className="w-4 h-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                   </>
                 )}
               </button>
               
               <p className="mt-4 text-xs text-gray-400">
-                Ao continuar, você concorda com nossos termos de serviço.
+                O link será gerado de forma única para sua segurança.
               </p>
             </div>
           )}
@@ -113,8 +130,33 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess 
                   <Linkedin className="w-8 h-8 text-brand-600" />
                 </div>
               </div>
-              <h4 className="text-lg font-bold text-gray-900 mb-2">Preparando conexão...</h4>
-              <p className="text-gray-500">Estamos estabelecendo um túnel seguro com o Unipile.</p>
+              <h4 className="text-lg font-bold text-gray-900 mb-2">Gerando Link Seguro...</h4>
+              <p className="text-gray-500 text-sm">Seu backend está solicitando o wizard para o Unipile.</p>
+            </div>
+          )}
+
+          {step === 'redirected' && (
+            <div className="text-center py-6">
+              <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-amber-100">
+                <ExternalLink className="w-8 h-8" />
+              </div>
+              <h4 className="text-lg font-bold text-gray-900 mb-2">Aguardando Wizard</h4>
+              <p className="text-sm text-gray-500 mb-6">
+                Redirecionamos você para o Wizard em uma nova aba.<br/>
+                Caso ela não tenha aberto, clique no botão abaixo:
+              </p>
+              <a 
+                href={hostedUrl || '#'} 
+                target="_blank" 
+                rel="noreferrer"
+                className="inline-block mb-4 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold transition-colors"
+              >
+                Abrir Manualmente
+              </a>
+              <div className="flex items-center justify-center gap-2 text-brand-600 text-xs mt-2 font-medium">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Aguardando conclusão do fluxo...
+              </div>
             </div>
           )}
 
@@ -124,8 +166,8 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess 
                 <CheckCircle2 className="w-10 h-10" />
               </div>
               <h4 className="text-2xl font-bold text-gray-900 mb-2">Conectado!</h4>
-              <p className="text-gray-500 mb-8">
-                Sua conta do LinkedIn foi vinculada com sucesso ao Luma Prospect.
+              <p className="text-gray-500 mb-8 text-sm">
+                Sua conta do LinkedIn foi vinculada via <strong>Hosted Auth Wizard</strong> com sucesso.
               </p>
               <button
                 onClick={onClose}
@@ -141,7 +183,7 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess 
         <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-center gap-2">
           <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5">
             Powered by 
-            <span className="text-blue-600 font-extrabold italic">Unipile</span>
+            <span className="text-blue-600 font-extrabold italic">Unipile Wizard</span>
           </span>
         </div>
       </div>

@@ -216,6 +216,7 @@ const App: React.FC = () => {
         isOpen={isAuthModalOpen} 
         onClose={() => setIsAuthModalOpen(false)} 
         onSuccess={handleAddAccount}
+        userId={currentAccount.id}
       />
     </div>
   );
