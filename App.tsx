@@ -5,6 +5,7 @@ import AudienceFilter from './components/AudienceFilter';
 import PipelineBoard from './components/KanbanInbox'; // Renamed export in file
 import Inbox from './components/Inbox';
 import Dashboard from './components/Dashboard';
+import LinkedInAuth from './components/LinkedInAuth';
 
 enum Tab {
   DASHBOARD = 'Painel de Controle',
@@ -31,10 +32,17 @@ const ACCOUNTS: Account[] = [
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.DASHBOARD);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   
   // Account State
+  const [accounts, setAccounts] = useState<Account[]>(ACCOUNTS);
   const [currentAccount, setCurrentAccount] = useState<Account>(ACCOUNTS[0]);
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+
+  const handleAddAccount = (newAccount: Account) => {
+    setAccounts(prev => [...prev, newAccount]);
+    setCurrentAccount(newAccount);
+  };
 
   const NavItem = ({ tab, icon: Icon, label }: { tab: Tab; icon: any; label: string }) => (
     <button
@@ -102,7 +110,7 @@ const App: React.FC = () => {
                 {isSwitcherOpen && (
                   <div className="absolute bottom-full left-0 w-full mb-2 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden animate-in fade-in zoom-in duration-200">
                     <div className="p-2 space-y-1">
-                      {ACCOUNTS.map(account => (
+                      {accounts.map(account => (
                         <button
                           key={account.id}
                           onClick={() => {
@@ -119,7 +127,13 @@ const App: React.FC = () => {
                         </button>
                       ))}
                       <div className="h-px bg-gray-100 my-1" />
-                      <button className="w-full flex items-center gap-3 p-2 rounded-lg text-sm text-gray-500 hover:bg-gray-50 hover:text-brand-600 transition-colors">
+                      <button 
+                        onClick={() => {
+                          setIsAuthModalOpen(true);
+                          setIsSwitcherOpen(false);
+                        }}
+                        className="w-full flex items-center gap-3 p-2 rounded-lg text-sm text-gray-500 hover:bg-gray-50 hover:text-brand-600 transition-colors"
+                      >
                         <div className="w-6 h-6 border border-dashed border-gray-300 rounded-full flex items-center justify-center">
                           <Plus className="w-3 h-3" />
                         </div>
@@ -196,6 +210,13 @@ const App: React.FC = () => {
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
+
+      {/* LinkedIn Auth Modal */}
+      <LinkedInAuth 
+        isOpen={isAuthModalOpen} 
+        onClose={() => setIsAuthModalOpen(false)} 
+        onSuccess={handleAddAccount}
+      />
     </div>
   );
 };
