@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
-import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, Linkedin, ChevronDown, ChevronUp, Plus, Check, Columns } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, ChevronDown, ChevronUp, Plus, Check, Columns } from 'lucide-react';
 import CampaignBuilder from './components/CampaignBuilder';
 import AudienceFilter from './components/AudienceFilter';
 import PipelineBoard from './components/KanbanInbox'; // Renamed export in file
 import Inbox from './components/Inbox';
 import Dashboard from './components/Dashboard';
 import LinkedInAuth from './components/LinkedInAuth';
+import { supabase } from './utils/supabase';
 
 enum Tab {
   DASHBOARD = 'Painel de Controle',
@@ -24,24 +25,71 @@ interface Account {
 }
 
 const ACCOUNTS: Account[] = [
-  { id: '1', name: 'João Silva', email: 'joao.silva@empresa.com.br', status: 'Ativo', initials: 'JS' },
-  { id: '2', name: 'Sara Costa', email: 'sara.costa@tech.com', status: 'Ativo', initials: 'SC' },
-  { id: '3', name: 'Marcos Souza', email: 'marcos@vendas.org', status: 'Restrito', initials: 'MS' },
+  { id: '00000000-0000-0000-0000-000000000001', name: 'João Silva', email: 'joao.silva@empresa.com.br', status: 'Ativo', initials: 'JS' },
+  { id: '00000000-0000-0000-0000-000000000002', name: 'Sara Costa', email: 'sara.costa@tech.com', status: 'Ativo', initials: 'SC' },
+  { id: '00000000-0000-0000-0000-000000000003', name: 'Marcos Souza', email: 'marcos@vendas.org', status: 'Restrito', initials: 'MS' },
 ];
+
+const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.DASHBOARD);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [reconnectAccountId, setReconnectAccountId] = useState<string | undefined>(undefined);
   
   // Account State
   const [accounts, setAccounts] = useState<Account[]>(ACCOUNTS);
   const [currentAccount, setCurrentAccount] = useState<Account>(ACCOUNTS[0]);
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
 
-  const handleAddAccount = (newAccount: Account) => {
-    setAccounts(prev => [...prev, newAccount]);
-    setCurrentAccount(newAccount);
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('accounts')
+          .select('*')
+          .eq('user_id', DEFAULT_USER_ID)
+          .order('created_at', { ascending: true });
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          const formattedAccounts: Account[] = data.map(acc => ({
+            id: acc.id,
+            name: acc.name,
+            email: acc.email,
+            status: acc.status as 'Ativo' | 'Desconectado' | 'Restrito',
+            initials: acc.initials || acc.name.substring(0, 2).toUpperCase()
+          }));
+          setAccounts(formattedAccounts);
+          setCurrentAccount(formattedAccounts[0]);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar contas:', err);
+      }
+    };
+
+    fetchAccounts();
+  }, []);
+
+  const handleAddAccount = (newAccount: any) => {
+    const formattedAccount: Account = {
+      id: newAccount.id,
+      name: newAccount.name,
+      email: newAccount.email,
+      status: newAccount.status as 'Ativo' | 'Desconectado' | 'Restrito',
+      initials: newAccount.initials || newAccount.name.substring(0, 2).toUpperCase()
+    };
+
+    setAccounts(prev => {
+      const exists = prev.some(a => a.id === formattedAccount.id);
+      if (exists) {
+        return prev.map(a => a.id === formattedAccount.id ? formattedAccount : a);
+      }
+      return [...prev, formattedAccount];
+    });
+    setCurrentAccount(formattedAccount);
   };
 
   const NavItem = ({ tab, icon: Icon, label }: { tab: Tab; icon: any; label: string }) => (
@@ -111,24 +159,43 @@ const App: React.FC = () => {
                   <div className="absolute bottom-full left-0 w-full mb-2 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden animate-in fade-in zoom-in duration-200">
                     <div className="p-2 space-y-1">
                       {accounts.map(account => (
-                        <button
-                          key={account.id}
-                          onClick={() => {
-                            setCurrentAccount(account);
-                            setIsSwitcherOpen(false);
-                          }}
-                          className={`w-full flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${currentAccount.id === account.id ? 'bg-brand-50 text-brand-700' : 'hover:bg-gray-50 text-gray-700'}`}
-                        >
-                           <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${currentAccount.id === account.id ? 'bg-brand-200 text-brand-800' : 'bg-gray-100 text-gray-600'}`}>
-                              {account.initials}
-                           </div>
-                           <span className="flex-1 text-left truncate">{account.name}</span>
-                           {currentAccount.id === account.id && <Check className="w-3 h-3" />}
-                        </button>
+                        <div key={account.id} className="group relative">
+                          <button
+                            onClick={() => {
+                              setCurrentAccount(account);
+                              setIsSwitcherOpen(false);
+                            }}
+                            className={`w-full flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${currentAccount.id === account.id ? 'bg-brand-50 text-brand-700' : 'hover:bg-gray-50 text-gray-700'}`}
+                          >
+                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${currentAccount.id === account.id ? 'bg-brand-200 text-brand-800' : 'bg-gray-100 text-gray-600'}`}>
+                                {account.initials}
+                             </div>
+                             <div className="flex-1 text-left truncate">
+                                <p className="font-medium">{account.name}</p>
+                                <p className={`text-[10px] ${account.status === 'Ativo' ? 'text-green-600' : 'text-red-500'}`}>{account.status}</p>
+                             </div>
+                             {currentAccount.id === account.id && <Check className="w-3 h-3" />}
+                          </button>
+                          
+                          {account.status !== 'Ativo' && (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReconnectAccountId(account.id);
+                                setIsAuthModalOpen(true);
+                                setIsSwitcherOpen(false);
+                              }}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 px-2 py-1 bg-white border border-red-200 text-red-600 text-[10px] font-bold rounded-md hover:bg-red-50"
+                            >
+                              Reconectar
+                            </button>
+                          )}
+                        </div>
                       ))}
                       <div className="h-px bg-gray-100 my-1" />
                       <button 
                         onClick={() => {
+                          setReconnectAccountId(undefined);
                           setIsAuthModalOpen(true);
                           setIsSwitcherOpen(false);
                         }}
@@ -214,9 +281,13 @@ const App: React.FC = () => {
       {/* LinkedIn Auth Modal */}
       <LinkedInAuth 
         isOpen={isAuthModalOpen} 
-        onClose={() => setIsAuthModalOpen(false)} 
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          setReconnectAccountId(undefined);
+        }} 
         onSuccess={handleAddAccount}
-        userId={currentAccount.id}
+        userId={DEFAULT_USER_ID}
+        reconnectAccountId={reconnectAccountId}
       />
     </div>
   );

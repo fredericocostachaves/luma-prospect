@@ -2,19 +2,102 @@
 import React, { useState } from 'react';
 import { Linkedin, X, ExternalLink, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { getHostedAuthLink, redirectToHostedAuth } from '../services/unipileService';
+import { supabase } from '../utils/supabase';
 
 interface LinkedInAuthProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (account: any) => void;
   userId?: string;
+  reconnectAccountId?: string;
+  notifyUrl?: string;
 }
 
-const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess, userId }) => {
+const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ 
+  isOpen, 
+  onClose, 
+  onSuccess, 
+  userId, 
+  reconnectAccountId,
+  notifyUrl 
+}) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<'initial' | 'connecting' | 'redirected' | 'success'>('initial');
   const [hostedUrl, setHostedUrl] = useState<string | null>(null);
+
+  // Implementação de Supabase Realtime para ouvir quando a conta for criada/atualizada via Webhook (Step 4 do Unipile)
+  React.useEffect(() => {
+    if (step !== 'redirected' || !userId) return;
+
+    // Verificar imediatamente ao entrar neste estado (caso o webhook tenha sido mais rápido)
+    checkStatus();
+
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'accounts'
+          // Removido filtro de postgres para maior robustez, filtrando no callback
+        },
+        (payload) => {
+          console.log('Mudança detectada na tabela accounts:', payload);
+          const newAccount = payload.new as any;
+          // Se uma nova conta foi inserida ou atualizada para Ativo, podemos considerar sucesso
+          if (newAccount && newAccount.user_id === userId && newAccount.status === 'Ativo') {
+            setStep(prev => {
+              if (prev !== 'success' && onSuccess) {
+                onSuccess(newAccount);
+              }
+              return 'success';
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    // Polling de segurança a cada 5 segundos (opcional, mas garante o retorno caso o realtime falhe)
+    const interval = setInterval(checkStatus, 5000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, [step, userId, onSuccess]);
+
+  const checkStatus = async () => {
+    if (!userId) return;
+    try {
+      const { data, error: supabaseError } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('status', 'Ativo')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (supabaseError) {
+        console.error('Supabase error in checkStatus:', supabaseError);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        const resultAccount = data[0];
+        setStep(prev => {
+          if (prev !== 'success' && onSuccess) {
+            onSuccess(resultAccount);
+          }
+          return 'success';
+        });
+      }
+    } catch (err: any) {
+      console.error('Erro ao verificar status:', err);
+      // Opcional: setError('Não foi possível verificar o status da conta no momento.');
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -25,12 +108,18 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess,
 
     try {
       // Step 1 & 2: O backend deve criar o link do Hosted Auth Wizard
+      const isReconnect = !!reconnectAccountId;
+      
       const response = await getHostedAuthLink({
-        type: 'create',
-        providers: ['LINKEDIN'],
-        api_url: 'https://api.unipile.com',
-        expiresOn: new Date(Date.now() + 3600000).toISOString(), // expira em 1h
-        name: userId || 'anonymous_user' // ID interno do usuário (Step 1)
+        type: isReconnect ? 'reconnect' : 'create',
+        reconnect_account: reconnectAccountId,
+        providers: '*', // Alinhado com o exemplo funcional do usuário
+        api_url: 'https://api34.unipile.com:16410', // URL da instância api34 conforme exemplo
+        expiresOn: new Date(Date.now() + 86400000).toISOString(), // Expira em 24h
+        name: userId || 'anonymous_user',
+        notify_url: notifyUrl || import.meta.env.VITE_UNIPILE_NOTIFY_URL,
+        success_redirect_url: window.location.origin + '/?status=success', 
+        failure_redirect_url: window.location.origin + '/?status=failure'
       });
 
       setHostedUrl(response.url);
@@ -39,10 +128,6 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess,
       redirectToHostedAuth(response.url);
       
       setStep('redirected');
-      
-      // IMPORTANTE: O Step 4 da Unipile (receber o webhook e atualizar o frontend)
-      // deve ser implementado no seu backend. O frontend pode então escutar por mudanças
-      // no banco de dados (ex: via Supabase Realtime) para avançar automaticamente o status da conta.
       
       console.log('Wizard do Unipile iniciado. Aguardando conclusão na aba externa.');
 
@@ -78,7 +163,9 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess,
               <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-sm border border-blue-100">
                 <Linkedin className="w-8 h-8" />
               </div>
-              <h4 className="text-xl font-bold text-gray-900 mb-2">Conexão Simplificada</h4>
+              <h4 className="text-xl font-bold text-gray-900 mb-2">
+                {reconnectAccountId ? 'Reconectar Conta' : 'Conexão Simplificada'}
+              </h4>
               <p className="text-gray-500 mb-8 leading-relaxed">
                 Usamos o <strong>Hosted Auth Wizard</strong> do Unipile para fornecer uma interface segura e otimizada de login. 
               </p>
@@ -135,14 +222,25 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess,
                 Redirecionamos você para o Wizard em uma nova aba.<br/>
                 Caso ela não tenha aberto, clique no botão abaixo:
               </p>
-              <a 
-                href={hostedUrl || '#'} 
-                target="_blank" 
-                rel="noreferrer"
-                className="inline-block mb-4 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold transition-colors"
-              >
-                Abrir Manualmente
-              </a>
+              <div className="flex flex-col gap-2 items-center mb-6">
+                <button 
+                  onClick={checkStatus}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm font-semibold transition-all shadow-md"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Já conectei! Verificar agora
+                </button>
+
+                <a 
+                  href={hostedUrl || '#'} 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-4 transition-colors"
+                >
+                  O link não abriu? Clique aqui para abrir manualmente
+                </a>
+              </div>
+
               <div className="flex items-center justify-center gap-2 text-brand-600 text-xs mt-2 font-medium">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 Aguardando conclusão do fluxo...

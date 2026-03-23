@@ -10,10 +10,13 @@ export interface HostedAuthRequest {
   expiresOn: string;
   notify_url?: string;
   name?: string; // internal user ID
+  success_redirect_url?: string;
+  failure_redirect_url?: string;
+  reconnect_account?: string;
 }
 
 export interface HostedAuthResponse {
-  object: 'HostedAuthURL';
+  object: 'HostedAuthURL' | 'HostedAuthUrl';
   url: string;
 }
 
