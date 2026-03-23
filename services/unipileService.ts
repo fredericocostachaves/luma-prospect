@@ -22,9 +22,11 @@ export interface HostedAuthResponse {
  * o link do Hosted Auth Wizard DEVE ser feita a partir de um processo de backend
  * intermediário para proteger a X-API-KEY. Nunca exponha sua chave no frontend.
  */
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || '';
+
 export const getHostedAuthLink = async (payload: Partial<HostedAuthRequest>): Promise<HostedAuthResponse> => {
   try {
-    const response = await fetch('/api/v1/hosted/accounts/link', {
+    const response = await fetch(`${API_BASE_URL}/api/v1/hosted/accounts/link`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

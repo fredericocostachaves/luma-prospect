@@ -40,21 +40,11 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ isOpen, onClose, onSuccess,
       
       setStep('redirected');
       
-      // Simulação do Step 4 (receber o webhook e atualizar o frontend)
-      // No fluxo real, após o redirecionamento bem sucedido, o usuário voltaria para o seu app 
-      // via success_redirect_url ou seu backend receberia o notify_url.
+      // IMPORTANTE: O Step 4 da Unipile (receber o webhook e atualizar o frontend)
+      // deve ser implementado no seu backend. O frontend pode então escutar por mudanças
+      // no banco de dados (ex: via Supabase Realtime) para avançar automaticamente o status da conta.
       
-      setTimeout(() => {
-         setStep('success');
-         if (onSuccess) {
-            onSuccess({
-              id: Math.random().toString(36).substr(2, 9),
-              name: 'LinkedIn - Conectado via Wizard',
-              status: 'Ativo',
-              initials: 'LW'
-            });
-          }
-      }, 5000); // Simulando o tempo de espera pela conclusão do wizard em outra aba
+      console.log('Wizard do Unipile iniciado. Aguardando conclusão na aba externa.');
 
     } catch (err) {
       setError('Ocorreu um erro ao iniciar a autenticação (Hosted Auth Wizard). Tente novamente.');
