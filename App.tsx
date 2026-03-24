@@ -7,6 +7,8 @@ import Inbox from './components/Inbox';
 import Dashboard from './components/Dashboard';
 import LinkedInAuth from './components/LinkedInAuth';
 import { supabase } from './utils/supabase';
+import { Database } from './database.types';
+import { listAccounts } from './services/unipileService';
 
 enum Tab {
   DASHBOARD = 'Painel de Controle',
@@ -28,6 +30,8 @@ const ACCOUNTS: Account[] = [
   { id: '00000000-0000-0000-0000-000000000001', name: 'João Silva', email: 'joao.silva@empresa.com.br', status: 'Ativo', initials: 'JS' },
   { id: '00000000-0000-0000-0000-000000000002', name: 'Sara Costa', email: 'sara.costa@tech.com', status: 'Ativo', initials: 'SC' },
   { id: '00000000-0000-0000-0000-000000000003', name: 'Marcos Souza', email: 'marcos@vendas.org', status: 'Restrito', initials: 'MS' },
+  { id: '00000000-0000-0000-0000-000000000004', name: 'Ana Pereira', email: 'ana.pereira@exemplo.com', status: 'Ativo', initials: 'AP' },
+  { id: '00000000-0000-0000-0000-000000000005', name: 'Lucas Oliver', email: 'lucas@tech.io', status: 'Desconectado', initials: 'LO' },
 ];
 
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001';
@@ -46,34 +50,73 @@ const App: React.FC = () => {
   useEffect(() => {
     const fetchAccounts = async () => {
       try {
-        const { data, error } = await supabase
+        // 1. Tentar carregar do Unipile (via backend) para status em tempo real
+        const unipileResponse = await listAccounts();
+        
+        if (unipileResponse && unipileResponse.items && unipileResponse.items.length > 0) {
+          const formattedAccounts: Account[] = unipileResponse.items.map((acc: any) => {
+            const sourceStatus = acc.sources?.[0]?.status || 'UNKNOWN';
+            return {
+              id: acc.id,
+              name: acc.name,
+              email: acc.type || 'Sem e-mail',
+              status: sourceStatus === 'OK' ? 'Ativo' : (sourceStatus === 'CONNECTING' ? 'Desconectado' : 'Restrito'),
+              initials: acc.name.substring(0, 2).toUpperCase()
+            };
+          });
+
+          setAccounts([...ACCOUNTS, ...formattedAccounts]);
+
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('status') === 'success') {
+            setCurrentAccount(formattedAccounts[formattedAccounts.length - 1]);
+            window.history.replaceState({}, '', window.location.pathname);
+          } else {
+            setCurrentAccount(formattedAccounts[0]);
+          }
+          return;
+        }
+
+        // 2. Fallback: carregar do Supabase se o Unipile não retornar nada
+        const { data, error } = await (supabase as any)
           .from('accounts')
           .select('*')
           .eq('user_id', DEFAULT_USER_ID)
           .order('created_at', { ascending: true });
 
-        if (error) throw error;
+        if (error) {
+          console.error('Erro ao carregar contas do Supabase:', error);
+          return;
+        }
 
         if (data && data.length > 0) {
-          const formattedAccounts: Account[] = data.map(acc => ({
+          const formattedAccounts: Account[] = (data as any[]).map(acc => ({
             id: acc.id,
             name: acc.name,
             email: acc.email,
             status: acc.status as 'Ativo' | 'Desconectado' | 'Restrito',
             initials: acc.initials || acc.name.substring(0, 2).toUpperCase()
           }));
-          setAccounts(formattedAccounts);
-          setCurrentAccount(formattedAccounts[0]);
+          setAccounts([...ACCOUNTS, ...formattedAccounts]);
+          
+          const params = new URLSearchParams(window.location.search);
+          if (params.get('status') === 'success') {
+             setCurrentAccount(formattedAccounts[formattedAccounts.length - 1]);
+             window.history.replaceState({}, '', window.location.pathname);
+          } else {
+             setCurrentAccount(formattedAccounts[0]);
+          }
         }
+
       } catch (err) {
         console.error('Erro ao carregar contas:', err);
       }
     };
 
-    fetchAccounts();
+    void fetchAccounts();
   }, []);
 
-  const handleAddAccount = (newAccount: any) => {
+  const handleAddAccount = async (newAccount: any) => {
     const formattedAccount: Account = {
       id: newAccount.id,
       name: newAccount.name,
@@ -81,6 +124,34 @@ const App: React.FC = () => {
       status: newAccount.status as 'Ativo' | 'Desconectado' | 'Restrito',
       initials: newAccount.initials || newAccount.name.substring(0, 2).toUpperCase()
     };
+
+    // Salvar ou atualizar conta no banco de dados (Supabase)
+    try {
+      console.log('Persistindo conta no banco de dados:', formattedAccount.id);
+      
+      type AccountInsert = Database['public']['Tables']['accounts']['Insert'];
+      const accountToUpsert: AccountInsert = {
+        id: formattedAccount.id,
+        name: formattedAccount.name,
+        email: formattedAccount.email,
+        status: formattedAccount.status,
+        initials: formattedAccount.initials,
+        user_id: DEFAULT_USER_ID,
+        proxy_settings: newAccount.proxy_settings || null
+      };
+
+      const { error } = await (supabase as any)
+        .from('accounts')
+        .upsert(accountToUpsert);
+
+      if (error) {
+        console.error('Erro ao salvar conta no banco:', error);
+      } else {
+        console.log('Conta salva com sucesso no Supabase.');
+      }
+    } catch (err) {
+      console.error('Erro inesperado ao salvar conta:', err);
+    }
 
     setAccounts(prev => {
       const exists = prev.some(a => a.id === formattedAccount.id);
@@ -142,12 +213,12 @@ const App: React.FC = () => {
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xs">
-                      {currentAccount.initials}
+                      {currentAccount?.initials || '??'}
                     </div>
                     <div className="flex-1 overflow-hidden">
-                      <p className="text-sm font-semibold text-gray-700 truncate">{currentAccount.name}</p>
-                      <p className={`text-xs ${currentAccount.status === 'Ativo' ? 'text-green-600' : 'text-red-500'}`}>
-                        {currentAccount.status}
+                      <p className="text-sm font-semibold text-gray-700 truncate">{currentAccount?.name || 'Carregando...'}</p>
+                      <p className={`text-xs ${currentAccount?.status === 'Ativo' ? 'text-green-600' : 'text-red-500'}`}>
+                        {currentAccount?.status || 'Status desconhecido'}
                       </p>
                     </div>
                     {isSwitcherOpen ? <ChevronUp className="w-4 h-4 text-gray-400"/> : <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-gray-600"/>}
@@ -246,7 +317,7 @@ const App: React.FC = () => {
                   {activeTab}
                 </h1>
                 <p className="text-gray-500 mt-1">
-                  {activeTab === Tab.DASHBOARD && `Visão geral para ${currentAccount.name}`}
+                  {activeTab === Tab.DASHBOARD && `Visão geral para ${currentAccount?.name || 'sua conta'}`}
                   {activeTab === Tab.CAMPAIGNS && 'Crie e gerencie seus fluxos de automação.'}
                   {activeTab === Tab.AUDIENCE && 'Encontre e importe leads usando filtros.'}
                   {activeTab === Tab.INBOX && 'Gerencie mensagens não lidas e respostas.'}
@@ -257,11 +328,11 @@ const App: React.FC = () => {
               {/* Context indicator */}
               <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-medium rounded-full border border-blue-100 self-start sm:self-auto">
                 <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
-                Visualizando: {currentAccount.name}
+                Visualizando: {currentAccount?.name || '...'}
               </div>
             </header>
 
-            {activeTab === Tab.DASHBOARD && <Dashboard />}
+            {activeTab === Tab.DASHBOARD && <Dashboard accounts={accounts} />}
             {activeTab === Tab.CAMPAIGNS && <CampaignBuilder />}
             {activeTab === Tab.AUDIENCE && <AudienceFilter />}
             {activeTab === Tab.INBOX && <Inbox />}

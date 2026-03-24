@@ -51,11 +51,35 @@ export const getHostedAuthLink = async (payload: Partial<HostedAuthRequest>): Pr
 };
 
 /**
+ * List accounts from Unipile (via backend)
+ */
+export const listAccounts = async (): Promise<any> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/hosted/accounts`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Erro na requisição: ${response.status} - ${errorText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Erro ao listar contas do Unipile:', error);
+    throw error;
+  }
+};
+
+/**
  * Conforme o Step 3 da documentação, o redirecionamento deve ser automático.
  */
 export const redirectToHostedAuth = (url: string) => {
-  // Recomendamos abrir em uma nova aba ou redirecionar a atual
-  // A documentação diz: "implement an automatic redirection mechanism"
-  // E também: "We do not recommend embedding our link in an iframe"
-  window.open(url, '_blank', 'noopener,noreferrer');
+  // Conforme o pedido do usuário, agora o redirecionamento ocorre na mesma aba.
+  // A documentação sugere um redirecionamento automático: "implement an automatic redirection mechanism"
+  // E desaconselha o uso de iframes: "We do not recommend embedding our link in an iframe"
+  window.location.assign(url);
 };

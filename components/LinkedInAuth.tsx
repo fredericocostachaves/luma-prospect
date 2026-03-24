@@ -129,7 +129,7 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
       
       setStep('redirected');
       
-      console.log('Wizard do Unipile iniciado. Aguardando conclusão na aba externa.');
+      console.log('Wizard do Unipile iniciado. Redirecionando para o fluxo de autenticação.');
 
     } catch (err) {
       setError('Ocorreu um erro ao iniciar a autenticação (Hosted Auth Wizard). Tente novamente.');
@@ -217,10 +217,10 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
               <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-amber-100">
                 <ExternalLink className="w-8 h-8" />
               </div>
-              <h4 className="text-lg font-bold text-gray-900 mb-2">Aguardando Wizard</h4>
+              <h4 className="text-lg font-bold text-gray-900 mb-2">Redirecionando</h4>
               <p className="text-sm text-gray-500 mb-6">
-                Redirecionamos você para o Wizard em uma nova aba.<br/>
-                Caso ela não tenha aberto, clique no botão abaixo:
+                Estamos enviando você para o Wizard de conexão.<br/>
+                Caso o redirecionamento demore, clique no botão abaixo:
               </p>
               <div className="flex flex-col gap-2 items-center mb-6">
                 <button 
@@ -233,8 +233,6 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
 
                 <a 
                   href={hostedUrl || '#'} 
-                  target="_blank" 
-                  rel="noreferrer"
                   className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-4 transition-colors"
                 >
                   O link não abriu? Clique aqui para abrir manualmente

@@ -52,8 +52,57 @@ const StatCard = ({ title, value, sub, icon: Icon, color }: any) => (
   </div>
 );
 
-const Dashboard: React.FC = () => {
+interface AccountFromApp {
+  id: string;
+  name: string;
+  email: string;
+  status: 'Ativo' | 'Desconectado' | 'Restrito';
+  initials: string;
+}
+
+interface DashboardProps {
+  accounts?: AccountFromApp[];
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ accounts = [] }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
+
+  // Map App accounts to AccountPerf for the table, matching with mock data where possible
+  const displayAccounts: AccountPerf[] = accounts.map(acc => {
+    // Try to find matching mock data by name to preserve metrics
+    const mockMatch = ACCOUNTS_DATA.find(m => m.name === acc.name);
+    
+    // Map status from App strings to Dashboard status keys
+    const statusMap: Record<string, 'active' | 'restricted' | 'disconnected'> = {
+      'Ativo': 'active',
+      'Restrito': 'restricted',
+      'Desconectado': 'disconnected'
+    };
+
+    if (mockMatch) {
+      return {
+        ...mockMatch,
+        id: acc.id,
+        status: statusMap[acc.status] || 'disconnected',
+        initials: acc.initials
+      };
+    }
+
+    // Default performance data for new Unipile accounts
+    return {
+      id: acc.id,
+      name: acc.name,
+      initials: acc.initials,
+      status: statusMap[acc.status] || 'disconnected',
+      baseInvites: 10,
+      baseConnections: 4,
+      baseMessages: 5,
+      baseReplies: 1,
+      baseProposals: 0,
+      baseMeetings: 0,
+      baseSales: 0
+    };
+  });
 
   // Helper to simulate data scaling based on time range
   const getMultiplier = (range: TimeRange) => {
@@ -140,7 +189,7 @@ const Dashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {ACCOUNTS_DATA.map((acc) => {
+              {displayAccounts.map((acc) => {
                 // Calculate scaled metrics
                 const invites = Math.floor(acc.baseInvites * multiplier);
                 const connections = Math.floor(acc.baseConnections * multiplier);
