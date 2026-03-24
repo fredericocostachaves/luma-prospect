@@ -38,9 +38,17 @@ export const getHostedAuthLink = async (payload: Partial<HostedAuthRequest>): Pr
       body: JSON.stringify(payload)
     });
 
+    const contentType = response.headers.get('content-type');
+
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Erro na requisição: ${response.status} - ${errorText}`);
+    }
+
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('Resposta inesperada (não-JSON):', text.substring(0, 100));
+      throw new Error('O servidor retornou HTML em vez de JSON. Verifique a configuração do Proxy no Nginx.');
     }
 
     return await response.json();
@@ -62,9 +70,17 @@ export const listAccounts = async (): Promise<any> => {
       }
     });
 
+    const contentType = response.headers.get('content-type');
+
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Erro na requisição: ${response.status} - ${errorText}`);
+    }
+
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('Resposta inesperada (não-JSON):', text.substring(0, 100));
+      throw new Error('O servidor retornou HTML em vez de JSON. Verifique a configuração do Proxy no Nginx.');
     }
 
     return await response.json();
