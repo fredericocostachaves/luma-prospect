@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { Users, Send, MessageCircle, Percent, AlertTriangle, CheckCircle, Ban, Calendar, DollarSign, FileText, Video } from 'lucide-react';
+import { Users, Send, MessageCircle, Percent, AlertTriangle, Ban, DollarSign, FileText, Video } from 'lucide-react';
 
 // --- MOCK DATA FOR CHARTS ---
 const chartData = [
