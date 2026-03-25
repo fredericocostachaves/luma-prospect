@@ -26,13 +26,6 @@ interface Account {
   initials: string;
 }
 
-const ACCOUNTS: Account[] = [
-  { id: '00000000-0000-0000-0000-000000000001', name: 'João Silva', email: 'joao.silva@empresa.com.br', status: 'Ativo', initials: 'JS' },
-  { id: '00000000-0000-0000-0000-000000000002', name: 'Sara Costa', email: 'sara.costa@tech.com', status: 'Ativo', initials: 'SC' },
-  { id: '00000000-0000-0000-0000-000000000003', name: 'Marcos Souza', email: 'marcos@vendas.org', status: 'Restrito', initials: 'MS' },
-  { id: '00000000-0000-0000-0000-000000000004', name: 'Ana Pereira', email: 'ana.pereira@exemplo.com', status: 'Ativo', initials: 'AP' },
-  { id: '00000000-0000-0000-0000-000000000005', name: 'Lucas Oliver', email: 'lucas@tech.io', status: 'Desconectado', initials: 'LO' },
-];
 
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -43,8 +36,8 @@ const App: React.FC = () => {
   const [reconnectAccountId, setReconnectAccountId] = useState<string | undefined>(undefined);
   
   // Account State
-  const [accounts, setAccounts] = useState<Account[]>(ACCOUNTS);
-  const [currentAccount, setCurrentAccount] = useState<Account>(ACCOUNTS[0]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
 
   useEffect(() => {
@@ -65,7 +58,7 @@ const App: React.FC = () => {
             };
           });
 
-          setAccounts([...ACCOUNTS, ...formattedAccounts]);
+          setAccounts(formattedAccounts);
 
           const params = new URLSearchParams(window.location.search);
           if (params.get('status') === 'success') {
@@ -97,7 +90,7 @@ const App: React.FC = () => {
             status: acc.status as 'Ativo' | 'Desconectado' | 'Restrito',
             initials: acc.initials || acc.name.substring(0, 2).toUpperCase()
           }));
-          setAccounts([...ACCOUNTS, ...formattedAccounts]);
+          setAccounts(formattedAccounts);
           
           const params = new URLSearchParams(window.location.search);
           if (params.get('status') === 'success') {
@@ -236,16 +229,16 @@ const App: React.FC = () => {
                               setCurrentAccount(account);
                               setIsSwitcherOpen(false);
                             }}
-                            className={`w-full flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${currentAccount.id === account.id ? 'bg-brand-50 text-brand-700' : 'hover:bg-gray-50 text-gray-700'}`}
+                            className={`w-full flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${currentAccount?.id === account.id ? 'bg-brand-50 text-brand-700' : 'hover:bg-gray-50 text-gray-700'}`}
                           >
-                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${currentAccount.id === account.id ? 'bg-brand-200 text-brand-800' : 'bg-gray-100 text-gray-600'}`}>
+                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${currentAccount?.id === account.id ? 'bg-brand-200 text-brand-800' : 'bg-gray-100 text-gray-600'}`}>
                                 {account.initials}
                              </div>
                              <div className="flex-1 text-left truncate">
                                 <p className="font-medium">{account.name}</p>
                                 <p className={`text-[10px] ${account.status === 'Ativo' ? 'text-green-600' : 'text-red-500'}`}>{account.status}</p>
                              </div>
-                             {currentAccount.id === account.id && <Check className="w-3 h-3" />}
+                             {currentAccount?.id === account.id && <Check className="w-3 h-3" />}
                           </button>
                           
                           {account.status !== 'Ativo' && (

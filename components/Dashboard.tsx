@@ -29,13 +29,6 @@ interface AccountPerf {
   baseSales: number;
 }
 
-const ACCOUNTS_DATA: AccountPerf[] = [
-  { id: '1', name: 'João Silva', initials: 'JS', status: 'active', baseInvites: 45, baseConnections: 18, baseMessages: 15, baseReplies: 5, baseProposals: 2, baseMeetings: 1, baseSales: 0.2 },
-  { id: '2', name: 'Sara Costa', initials: 'SC', status: 'active', baseInvites: 50, baseConnections: 25, baseMessages: 22, baseReplies: 8, baseProposals: 4, baseMeetings: 2, baseSales: 0.5 },
-  { id: '3', name: 'Marcos Souza', initials: 'MS', status: 'restricted', baseInvites: 0, baseConnections: 2, baseMessages: 5, baseReplies: 3, baseProposals: 1, baseMeetings: 0, baseSales: 0 },
-  { id: '4', name: 'Ana Pereira', initials: 'AP', status: 'active', baseInvites: 30, baseConnections: 10, baseMessages: 8, baseReplies: 2, baseProposals: 1, baseMeetings: 0.5, baseSales: 0.1 },
-  { id: '5', name: 'Lucas Oliver', initials: 'LO', status: 'disconnected', baseInvites: 0, baseConnections: 0, baseMessages: 0, baseReplies: 0, baseProposals: 0, baseMeetings: 0, baseSales: 0 },
-];
 
 type TimeRange = '1d' | '3d' | '7d' | '30d' | '3m' | '6m' | '12m';
 
@@ -67,11 +60,8 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ accounts = [] }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
 
-  // Map App accounts to AccountPerf for the table, matching with mock data where possible
+  // Map App accounts to AccountPerf for the table, matching with possible performance data
   const displayAccounts: AccountPerf[] = accounts.map(acc => {
-    // Try to find matching mock data by name to preserve metrics
-    const mockMatch = ACCOUNTS_DATA.find(m => m.name === acc.name);
-    
     // Map status from App strings to Dashboard status keys
     const statusMap: Record<string, 'active' | 'restricted' | 'disconnected'> = {
       'Ativo': 'active',
@@ -79,16 +69,7 @@ const Dashboard: React.FC<DashboardProps> = ({ accounts = [] }) => {
       'Desconectado': 'disconnected'
     };
 
-    if (mockMatch) {
-      return {
-        ...mockMatch,
-        id: acc.id,
-        status: statusMap[acc.status] || 'disconnected',
-        initials: acc.initials
-      };
-    }
-
-    // Default performance data for new Unipile accounts
+    // Default performance data for accounts
     return {
       id: acc.id,
       name: acc.name,
