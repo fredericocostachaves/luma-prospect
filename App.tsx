@@ -118,12 +118,27 @@ const App: React.FC = () => {
       initials: newAccount.initials || newAccount.name.substring(0, 2).toUpperCase()
     };
 
-    // Salvar ou atualizar conta no banco de dados (Supabase)
+    // Verificar se a conta já existe
+    const accountExists = accounts.some(a => a.id === formattedAccount.id);
+    if (accountExists) {
+      console.error('Conta já existe');
+      alert('Esta conta já está vinculada. Remova-a primeiro se quiser reconectá-la.');
+      return;
+    }
+
+    // Verificar limite de 5 contas
+    if (accounts.length >= 5) {
+      console.error('Limite de 5 contas atingido');
+      alert('Você atingiu o limite máximo de 5 contas. Remova uma conta para adicionar outra.');
+      return;
+    }
+
+    // Salvar conta no banco de dados (Supabase)
     try {
       console.log('Persistindo conta no banco de dados:', formattedAccount.id);
       
       type AccountInsert = Database['public']['Tables']['accounts']['Insert'];
-      const accountToUpsert: AccountInsert = {
+      const accountToInsert: AccountInsert = {
         id: formattedAccount.id,
         name: formattedAccount.name,
         email: formattedAccount.email,
@@ -135,24 +150,22 @@ const App: React.FC = () => {
 
       const { error } = await (supabase as any)
         .from('accounts')
-        .upsert(accountToUpsert);
+        .insert(accountToInsert);
 
       if (error) {
         console.error('Erro ao salvar conta no banco:', error);
+        alert('Erro ao salvar a conta. Tente novamente.');
+        return;
       } else {
         console.log('Conta salva com sucesso no Supabase.');
       }
     } catch (err) {
       console.error('Erro inesperado ao salvar conta:', err);
+      alert('Erro inesperado ao adicionar conta.');
+      return;
     }
 
-    setAccounts(prev => {
-      const exists = prev.some(a => a.id === formattedAccount.id);
-      if (exists) {
-        return prev.map(a => a.id === formattedAccount.id ? formattedAccount : a);
-      }
-      return [...prev, formattedAccount];
-    });
+    setAccounts(prev => [...prev, formattedAccount]);
     setCurrentAccount(formattedAccount);
   };
 
@@ -263,12 +276,21 @@ const App: React.FC = () => {
                           setIsAuthModalOpen(true);
                           setIsSwitcherOpen(false);
                         }}
-                        className="w-full flex items-center gap-3 p-2 rounded-lg text-sm text-gray-500 hover:bg-gray-50 hover:text-brand-600 transition-colors"
+                        disabled={accounts.length >= 5}
+                        className={`w-full flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${
+                          accounts.length >= 5
+                            ? 'text-gray-300 cursor-not-allowed'
+                            : 'text-gray-500 hover:bg-gray-50 hover:text-brand-600'
+                        }`}
+                        title={accounts.length >= 5 ? 'Limite de 5 contas atingido' : ''}
                       >
-                        <div className="w-6 h-6 border border-dashed border-gray-300 rounded-full flex items-center justify-center">
+                        <div className={`w-6 h-6 border border-dashed rounded-full flex items-center justify-center ${
+                          accounts.length >= 5 ? 'border-gray-200' : 'border-gray-300'
+                        }`}>
                           <Plus className="w-3 h-3" />
                         </div>
                         <span className="font-medium">Adicionar Conta</span>
+                        {accounts.length >= 5 && <span className="ml-auto text-xs">Limite: 5/5</span>}
                       </button>
                     </div>
                   </div>
@@ -352,6 +374,7 @@ const App: React.FC = () => {
         onSuccess={handleAddAccount}
         userId={DEFAULT_USER_ID}
         reconnectAccountId={reconnectAccountId}
+        existingAccounts={accounts}
       />
     </div>
   );

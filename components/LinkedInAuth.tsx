@@ -4,6 +4,7 @@ import { Linkedin, X, ExternalLink, Loader2, AlertCircle, CheckCircle2 } from 'l
 import { getHostedAuthLink, redirectToHostedAuth } from '../services/unipileService';
 import { supabase } from '../utils/supabase';
 
+
 interface LinkedInAuthProps {
   isOpen: boolean;
   onClose: () => void;
@@ -11,6 +12,7 @@ interface LinkedInAuthProps {
   userId?: string;
   reconnectAccountId?: string;
   notifyUrl?: string;
+  existingAccounts?: Array<{ id: string }>;
 }
 
 const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ 
@@ -19,7 +21,8 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
   onSuccess, 
   userId, 
   reconnectAccountId,
-  notifyUrl 
+  notifyUrl,
+  existingAccounts = []
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +110,14 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
     setStep('connecting');
 
     try {
+      // Validar se é reconexão de conta duplicada
+      if (reconnectAccountId && !existingAccounts.some(a => a.id === reconnectAccountId)) {
+        setError('Conta não encontrada. Recarregue a página e tente novamente.');
+        setStep('initial');
+        setLoading(false);
+        return;
+      }
+
       // Step 1 & 2: O backend deve criar o link do Hosted Auth Wizard
       const isReconnect = !!reconnectAccountId;
       
