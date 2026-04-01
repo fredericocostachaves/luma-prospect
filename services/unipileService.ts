@@ -81,11 +81,72 @@ export const listAccounts = async (): Promise<any> => {
 };
 
 /**
- * Conforme o Step 3 da documentação, o redirecionamento deve ser automático.
+ * Redirect to the Unipile Hosted Auth Wizard
  */
 export const redirectToHostedAuth = (url: string) => {
-  // Conforme o pedido do usuário, agora o redirecionamento ocorre na mesma aba.
-  // A documentação sugere um redirecionamento automático: "implement an automatic redirection mechanism"
-  // E desaconselha o uso de iframes: "We do not recommend embedding our link in an iframe"
   window.location.assign(url);
+};
+
+export interface CreateAccountRequest {
+  email: string;
+  password: string;
+  name?: string;
+  company?: string;
+  phone?: string;
+  country?: string;
+}
+
+export interface CreateAccountResponse {
+  object: string;
+  url: string;
+}
+
+export const createAccount = async (payload: CreateAccountRequest): Promise<CreateAccountResponse> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/hosted/accounts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    return await parseJsonResponse(response);
+  } catch (error) {
+    console.error('Erro ao criar conta no Unipile:', error);
+    throw error;
+  }
+};
+
+export interface HostedReconnectRequest {
+  accountId: string;
+  type: 'reconnect';
+  providers: string[];
+  notifyUrl?: string;
+  successRedirectUrl?: string;
+  failureRedirectUrl?: string;
+}
+
+export interface HostedReconnectResponse {
+  object: string;
+  url: string;
+}
+
+export const getReconnectLink = async (payload: HostedReconnectRequest): Promise<HostedReconnectResponse> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/hosted/accounts/reconnect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    return await parseJsonResponse(response);
+  } catch (error) {
+    console.error('Erro ao gerar link de reconexão:', error);
+    throw error;
+  }
 };

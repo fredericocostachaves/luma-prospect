@@ -43,11 +43,15 @@ const App: React.FC = () => {
   useEffect(() => {
     const fetchAccounts = async () => {
       try {
+        const params = new URLSearchParams(window.location.search);
+        const isSuccess = params.get('status') === 'success';
+        let formattedAccounts: Account[] = [];
+
         // 1. Tentar carregar do Unipile (via backend) para status em tempo real
         const unipileResponse = await listAccounts();
         
         if (unipileResponse && unipileResponse.items && unipileResponse.items.length > 0) {
-          const formattedAccounts: Account[] = unipileResponse.items.map((acc: any) => {
+          formattedAccounts = unipileResponse.items.map((acc: any) => {
             const sourceStatus = acc.sources?.[0]?.status || 'UNKNOWN';
             return {
               id: acc.id,
@@ -57,47 +61,37 @@ const App: React.FC = () => {
               initials: acc.name.substring(0, 2).toUpperCase()
             };
           });
+        } else {
+          // 2. Fallback: carregar do Supabase se o Unipile não retornar nada
+          const { data, error } = await (supabase as any)
+            .from('accounts')
+            .select('*')
+            .eq('user_id', DEFAULT_USER_ID)
+            .order('created_at', { ascending: true });
 
-          setAccounts(formattedAccounts);
-
-          const params = new URLSearchParams(window.location.search);
-          if (params.get('status') === 'success') {
-            setCurrentAccount(formattedAccounts[formattedAccounts.length - 1]);
-            window.history.replaceState({}, '', window.location.pathname);
-          } else {
-            setCurrentAccount(formattedAccounts[0]);
+          if (error) {
+            console.error('Erro ao carregar contas do Supabase:', error);
+            return;
           }
-          return;
+
+          if (data && data.length > 0) {
+            formattedAccounts = (data as any[]).map(acc => ({
+              id: acc.id,
+              name: acc.name,
+              email: acc.email,
+              status: acc.status as 'Ativo' | 'Desconectado' | 'Restrito',
+              initials: acc.initials || acc.name.substring(0, 2).toUpperCase()
+            }));
+          }
         }
 
-        // 2. Fallback: carregar do Supabase se o Unipile não retornar nada
-        const { data, error } = await (supabase as any)
-          .from('accounts')
-          .select('*')
-          .eq('user_id', DEFAULT_USER_ID)
-          .order('created_at', { ascending: true });
-
-        if (error) {
-          console.error('Erro ao carregar contas do Supabase:', error);
-          return;
-        }
-
-        if (data && data.length > 0) {
-          const formattedAccounts: Account[] = (data as any[]).map(acc => ({
-            id: acc.id,
-            name: acc.name,
-            email: acc.email,
-            status: acc.status as 'Ativo' | 'Desconectado' | 'Restrito',
-            initials: acc.initials || acc.name.substring(0, 2).toUpperCase()
-          }));
+        if (formattedAccounts.length > 0) {
           setAccounts(formattedAccounts);
-          
-          const params = new URLSearchParams(window.location.search);
-          if (params.get('status') === 'success') {
-             setCurrentAccount(formattedAccounts[formattedAccounts.length - 1]);
-             window.history.replaceState({}, '', window.location.pathname);
-          } else {
-             setCurrentAccount(formattedAccounts[0]);
+          const targetIndex = isSuccess ? formattedAccounts.length - 1 : 0;
+          setCurrentAccount(formattedAccounts[targetIndex]);
+
+          if (isSuccess) {
+            window.history.replaceState({}, '', window.location.pathname);
           }
         }
 
@@ -372,9 +366,7 @@ const App: React.FC = () => {
           setReconnectAccountId(undefined);
         }} 
         onSuccess={handleAddAccount}
-        userId={DEFAULT_USER_ID}
         reconnectAccountId={reconnectAccountId}
-        existingAccounts={accounts}
       />
     </div>
   );
