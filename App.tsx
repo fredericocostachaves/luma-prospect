@@ -77,6 +77,9 @@ const App: React.FC = () => {
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+    let hasCleanedDuplicates = false;
+
     const fetchAccounts = async () => {
       try {
         const params = new URLSearchParams(window.location.search);
@@ -100,22 +103,27 @@ const App: React.FC = () => {
             };
           });
 
-          // Detectar e remover duplicatas
-          await removeDuplicateAccounts(rawAccountsData);
+          // Detectar e remover duplicatas (apenas uma vez)
+          if (!hasCleanedDuplicates) {
+            hasCleanedDuplicates = true;
+            await removeDuplicateAccounts(rawAccountsData);
 
-          // Recarregar contas após remover duplicatas
-          const updatedResponse = await listAccounts();
-          if (updatedResponse && updatedResponse.items && updatedResponse.items.length > 0) {
-            formattedAccounts = updatedResponse.items.map((acc: any) => {
-              const sourceStatus = acc.sources?.[0]?.status || 'UNKNOWN';
-              return {
-                id: acc.id,
-                name: acc.name,
-                email: acc.type || 'Sem e-mail',
-                status: sourceStatus === 'OK' ? 'Ativo' : (sourceStatus === 'CONNECTING' ? 'Desconectado' : 'Restrito'),
-                initials: acc.name.substring(0, 2).toUpperCase()
-              };
-            });
+            // Recarregar contas após remover duplicatas
+            if (isMounted) {
+              const updatedResponse = await listAccounts();
+              if (updatedResponse && updatedResponse.items && updatedResponse.items.length > 0) {
+                formattedAccounts = updatedResponse.items.map((acc: any) => {
+                  const sourceStatus = acc.sources?.[0]?.status || 'UNKNOWN';
+                  return {
+                    id: acc.id,
+                    name: acc.name,
+                    email: acc.type || 'Sem e-mail',
+                    status: sourceStatus === 'OK' ? 'Ativo' : (sourceStatus === 'CONNECTING' ? 'Desconectado' : 'Restrito'),
+                    initials: acc.name.substring(0, 2).toUpperCase()
+                  };
+                });
+              }
+            }
           }
         } else {
           // 2. Fallback: carregar do Supabase se o Unipile não retornar nada
@@ -141,7 +149,7 @@ const App: React.FC = () => {
           }
         }
 
-        if (formattedAccounts.length > 0) {
+        if (isMounted && formattedAccounts.length > 0) {
           setAccounts(formattedAccounts);
           const targetIndex = isSuccess ? formattedAccounts.length - 1 : 0;
           setCurrentAccount(formattedAccounts[targetIndex]);
@@ -157,6 +165,10 @@ const App: React.FC = () => {
     };
 
     void fetchAccounts();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleAddAccount = async (newAccount: any) => {
