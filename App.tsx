@@ -30,8 +30,9 @@ interface Account {
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 // Função para detectar e remover contas duplicadas, mantendo a mais antiga
-const removeDuplicateAccounts = async (accounts: any[]) => {
+const removeDuplicateAccounts = async (accounts: any[]): Promise<string[]> => {
   const accountsByName: { [key: string]: any[] } = {};
+  const deletedIds: string[] = [];
 
   // Agrupar contas por nome
   accounts.forEach(acc => {
@@ -57,12 +58,15 @@ const removeDuplicateAccounts = async (accounts: any[]) => {
         try {
           console.log(`Deletando conta duplicada: ${sorted[i].id} (${sorted[i].name})`);
           await deleteAccount(sorted[i].id);
+          deletedIds.push(sorted[i].id);
         } catch (error) {
           console.error(`Erro ao deletar conta ${sorted[i].id}:`, error);
         }
       }
     }
   }
+
+  return deletedIds;
 };
 
 const App: React.FC = () => {
@@ -78,52 +82,38 @@ const App: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
-    let hasCleanedDuplicates = false;
 
     const fetchAccounts = async () => {
       try {
         const params = new URLSearchParams(window.location.search);
         const isSuccess = params.get('status') === 'success';
-        let formattedAccounts: Account[] = [];
-        let rawAccountsData: any[] = [];
-
-        // 1. Tentar carregar do Unipile (via backend) para status em tempo real
-        const unipileResponse = await listAccounts();
+// 1. Tentar carregar do Unipile (via backend) para status em tempo real
+        let unipileResponse = await listAccounts();
+        let accountsToDisplay: Account[] = [];
         
         if (unipileResponse && unipileResponse.items && unipileResponse.items.length > 0) {
-          rawAccountsData = unipileResponse.items;
-          formattedAccounts = rawAccountsData.map((acc: any) => {
-            const sourceStatus = acc.sources?.[0]?.status || 'UNKNOWN';
-            return {
-              id: acc.id,
-              name: acc.name,
-              email: acc.type || 'Sem e-mail',
-              status: sourceStatus === 'OK' ? 'Ativo' : (sourceStatus === 'CONNECTING' ? 'Desconectado' : 'Restrito'),
-              initials: acc.name.substring(0, 2).toUpperCase()
-            };
-          });
+          // Detectar e remover duplicatas
+          const deletedIds = await removeDuplicateAccounts(unipileResponse.items);
 
-          // Detectar e remover duplicatas (apenas uma vez)
-          if (!hasCleanedDuplicates) {
-            hasCleanedDuplicates = true;
-            await removeDuplicateAccounts(rawAccountsData);
+          // Filtrar contas deletadas localmente
+          if (deletedIds.length > 0) {
+            console.log(`Filtrando ${deletedIds.length} contas deletadas:`, deletedIds);
+            unipileResponse.items = unipileResponse.items.filter((acc: any) => !deletedIds.includes(acc.id));
+          }
 
-            // Recarregar contas após remover duplicatas
-            if (isMounted) {
-              const updatedResponse = await listAccounts();
-              if (updatedResponse && updatedResponse.items && updatedResponse.items.length > 0) {
-                formattedAccounts = updatedResponse.items.map((acc: any) => {
-                  const sourceStatus = acc.sources?.[0]?.status || 'UNKNOWN';
-                  return {
-                    id: acc.id,
-                    name: acc.name,
-                    email: acc.type || 'Sem e-mail',
-                    status: sourceStatus === 'OK' ? 'Ativo' : (sourceStatus === 'CONNECTING' ? 'Desconectado' : 'Restrito'),
-                    initials: acc.name.substring(0, 2).toUpperCase()
-                  };
-                });
-              }
-            }
+          // Formatar contas com a resposta atualizada
+          if (unipileResponse && unipileResponse.items && unipileResponse.items.length > 0) {
+            accountsToDisplay = unipileResponse.items.map((acc: any) => {
+              const sourceStatus = acc.sources?.[0]?.status || 'UNKNOWN';
+              return {
+                id: acc.id,
+                name: acc.name,
+                email: acc.type || 'Sem e-mail',
+                status: sourceStatus === 'OK' ? 'Ativo' : (sourceStatus === 'CONNECTING' ? 'Desconectado' : 'Restrito'),
+                initials: acc.name.substring(0, 2).toUpperCase()
+              };
+            });
+            console.log(`Total de contas após limpeza: ${accountsToDisplay.length}`);
           }
         } else {
           // 2. Fallback: carregar do Supabase se o Unipile não retornar nada
@@ -139,7 +129,7 @@ const App: React.FC = () => {
           }
 
           if (data && data.length > 0) {
-            formattedAccounts = (data as any[]).map(acc => ({
+            accountsToDisplay = (data as any[]).map(acc => ({
               id: acc.id,
               name: acc.name,
               email: acc.email,
@@ -149,10 +139,10 @@ const App: React.FC = () => {
           }
         }
 
-        if (isMounted && formattedAccounts.length > 0) {
-          setAccounts(formattedAccounts);
-          const targetIndex = isSuccess ? formattedAccounts.length - 1 : 0;
-          setCurrentAccount(formattedAccounts[targetIndex]);
+        if (isMounted && accountsToDisplay.length > 0) {
+          setAccounts(accountsToDisplay);
+          const targetIndex = isSuccess ? accountsToDisplay.length - 1 : 0;
+          setCurrentAccount(accountsToDisplay[targetIndex]);
 
           if (isSuccess) {
             window.history.replaceState({}, '', window.location.pathname);
