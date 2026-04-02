@@ -1,7 +1,14 @@
 
 import React, { useState } from 'react';
-import { Linkedin, X, Loader2, AlertCircle, Mail, Lock } from 'lucide-react';
-import { createAccount, getReconnectLink } from '../services/unipileService';
+import { X, Loader2, AlertCircle } from 'lucide-react';
+import { getHostedAuthLink, getReconnectLink } from '../services/unipileService';
+
+// Simple Icons LinkedIn SVG
+const LinkedInIcon = ({ className }: { className: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+  </svg>
+);
 
 interface LinkedInAuthProps {
   isOpen: boolean;
@@ -13,18 +20,14 @@ interface LinkedInAuthProps {
 const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ 
   isOpen, 
   onClose,
-                                                     reconnectAccountId
+  reconnectAccountId
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
 
   React.useEffect(() => {
     if (!isOpen) {
       setError(null);
-      setEmail('');
-      setPassword('');
     }
   }, [isOpen]);
 
@@ -44,10 +47,7 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
           failureRedirectUrl: window.location.origin + '/?status=failure'
         });
       } else {
-        response = await createAccount({
-          email,
-          password
-        });
+        response = await getHostedAuthLink();
       }
 
       console.log('Link gerado:', response.url);
@@ -55,7 +55,6 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
 
     } catch (err: any) {
       setError(err.message || 'Erro ao conectar conta.');
-    } finally {
       setLoading(false);
     }
   };
@@ -88,44 +87,22 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
                 </div>
               )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Email LinkedIn</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-                    placeholder="seu@email.com"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Senha</label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
-                    placeholder="••••••••"
-                  />
-                </div>
+              <div className="text-center py-4">
+                <p className="text-sm text-gray-600">
+                  Você será redirecionado para o assistente de conexão segura do Unipile para vincular sua conta do LinkedIn.
+                </p>
               </div>
 
               <button
                 onClick={handleConnect}
-                disabled={loading || !email || !password}
+                disabled={loading}
                 className="w-full bg-brand-600 hover:bg-brand-700 disabled:bg-gray-300 text-white font-semibold py-3.5 px-6 rounded-xl transition-all shadow-lg shadow-brand-200 flex items-center justify-center gap-2"
               >
                 {loading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
                   <>
-                    <Linkedin className="w-5 h-5" />
+                    <LinkedInIcon className="w-5 h-5" />
                     {reconnectAccountId ? 'Reconectar LinkedIn' : 'Conectar LinkedIn'}
                   </>
                 )}

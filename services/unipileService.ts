@@ -43,15 +43,15 @@ export interface HostedAuthResponse {
  */
 const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || '';
 
-export const getHostedAuthLink = async (payload: Partial<HostedAuthRequest>): Promise<HostedAuthResponse> => {
+export const getHostedAuthLink = async (payload?: Partial<HostedAuthRequest>): Promise<HostedAuthResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/hosted/accounts/link`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/accounts/link`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       },
-      body: JSON.stringify(payload)
+      body: payload ? JSON.stringify(payload) : undefined
     });
 
     return await parseJsonResponse(response);
@@ -66,7 +66,7 @@ export const getHostedAuthLink = async (payload: Partial<HostedAuthRequest>): Pr
  */
 export const listAccounts = async (): Promise<any> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/hosted/accounts`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/accounts`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json'
@@ -87,38 +87,6 @@ export const redirectToHostedAuth = (url: string) => {
   window.location.assign(url);
 };
 
-export interface CreateAccountRequest {
-  email: string;
-  password: string;
-  name?: string;
-  company?: string;
-  phone?: string;
-  country?: string;
-}
-
-export interface CreateAccountResponse {
-  object: string;
-  url: string;
-}
-
-export const createAccount = async (payload: CreateAccountRequest): Promise<CreateAccountResponse> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/hosted/accounts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    return await parseJsonResponse(response);
-  } catch (error) {
-    console.error('Erro ao criar conta no Unipile:', error);
-    throw error;
-  }
-};
-
 export interface HostedReconnectRequest {
   accountId: string;
   type: 'reconnect';
@@ -135,7 +103,7 @@ export interface HostedReconnectResponse {
 
 export const getReconnectLink = async (payload: HostedReconnectRequest): Promise<HostedReconnectResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/hosted/accounts/reconnect`, {
+    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/accounts/reconnect`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -148,5 +116,22 @@ export const getReconnectLink = async (payload: HostedReconnectRequest): Promise
   } catch (error) {
     console.error('Erro ao gerar link de reconexão:', error);
     throw error;
+  }
+};
+
+/**
+ * Delete a specific account from Unipile
+ */
+export const deleteAccount = async (accountId: string): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/api/v1/unipile/accounts/${accountId}`, {
+    method: 'DELETE',
+    headers: {
+      'Accept': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Erro ao deletar conta: ${response.status} - ${text}`);
   }
 };

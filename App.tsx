@@ -8,7 +8,7 @@ import Dashboard from './components/Dashboard';
 import LinkedInAuth from './components/LinkedInAuth';
 import { supabase } from './utils/supabase';
 import { Database } from './database.types';
-import { listAccounts } from './services/unipileService';
+import { listAccounts, deleteAccount } from './services/unipileService';
 
 enum Tab {
   DASHBOARD = 'Painel de Controle',
@@ -29,6 +29,42 @@ interface Account {
 
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001';
 
+// Função para detectar e remover contas duplicadas, mantendo a mais antiga
+const removeDuplicateAccounts = async (accounts: any[]) => {
+  const accountsByName: { [key: string]: any[] } = {};
+
+  // Agrupar contas por nome
+  accounts.forEach(acc => {
+    const name = acc.name.toLowerCase();
+    if (!accountsByName[name]) {
+      accountsByName[name] = [];
+    }
+    accountsByName[name].push(acc);
+  });
+
+  // Deletar contas duplicadas (mantendo a mais antiga)
+  for (const duplicates of Object.values(accountsByName)) {
+    if (duplicates.length > 1) {
+      // Ordenar por createdAt (mais antiga primeiro)
+      const sorted = duplicates.sort((a: any, b: any) => {
+        const dateA = new Date(a.created_at || 0).getTime();
+        const dateB = new Date(b.created_at || 0).getTime();
+        return dateA - dateB;
+      });
+
+      // Deletar todas menos a primeira (mais antiga)
+      for (let i = 1; i < sorted.length; i++) {
+        try {
+          console.log(`Deletando conta duplicada: ${sorted[i].id} (${sorted[i].name})`);
+          await deleteAccount(sorted[i].id);
+        } catch (error) {
+          console.error(`Erro ao deletar conta ${sorted[i].id}:`, error);
+        }
+      }
+    }
+  }
+};
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.DASHBOARD);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -46,12 +82,14 @@ const App: React.FC = () => {
         const params = new URLSearchParams(window.location.search);
         const isSuccess = params.get('status') === 'success';
         let formattedAccounts: Account[] = [];
+        let rawAccountsData: any[] = [];
 
         // 1. Tentar carregar do Unipile (via backend) para status em tempo real
         const unipileResponse = await listAccounts();
         
         if (unipileResponse && unipileResponse.items && unipileResponse.items.length > 0) {
-          formattedAccounts = unipileResponse.items.map((acc: any) => {
+          rawAccountsData = unipileResponse.items;
+          formattedAccounts = rawAccountsData.map((acc: any) => {
             const sourceStatus = acc.sources?.[0]?.status || 'UNKNOWN';
             return {
               id: acc.id,
@@ -61,6 +99,24 @@ const App: React.FC = () => {
               initials: acc.name.substring(0, 2).toUpperCase()
             };
           });
+
+          // Detectar e remover duplicatas
+          await removeDuplicateAccounts(rawAccountsData);
+
+          // Recarregar contas após remover duplicatas
+          const updatedResponse = await listAccounts();
+          if (updatedResponse && updatedResponse.items && updatedResponse.items.length > 0) {
+            formattedAccounts = updatedResponse.items.map((acc: any) => {
+              const sourceStatus = acc.sources?.[0]?.status || 'UNKNOWN';
+              return {
+                id: acc.id,
+                name: acc.name,
+                email: acc.type || 'Sem e-mail',
+                status: sourceStatus === 'OK' ? 'Ativo' : (sourceStatus === 'CONNECTING' ? 'Desconectado' : 'Restrito'),
+                initials: acc.name.substring(0, 2).toUpperCase()
+              };
+            });
+          }
         } else {
           // 2. Fallback: carregar do Supabase se o Unipile não retornar nada
           const { data, error } = await (supabase as any)

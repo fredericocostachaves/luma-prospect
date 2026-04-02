@@ -3,7 +3,7 @@
 
   1. User (The SaaS Customer)
      - id: UUID
-     - email: String
+     - username: String
      - plan_tier: Enum (FREE, PRO, BUSINESS)
      - created_at: Timestamp
 
