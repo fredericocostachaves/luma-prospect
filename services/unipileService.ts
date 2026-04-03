@@ -123,15 +123,10 @@ export const getReconnectLink = async (payload: HostedReconnectRequest): Promise
  * Delete a specific account from Unipile
  */
 export const deleteAccount = async (accountId: string): Promise<void> => {
-  const response = await fetch(`${API_BASE_URL}/api/v1/unipile/accounts/${accountId}`, {
+  await fetch(`${API_BASE_URL}/api/v1/unipile/accounts/${accountId}`, {
     method: 'DELETE',
     headers: {
       'Accept': 'application/json'
     }
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Erro ao deletar conta: ${response.status} - ${text}`);
-  }
 };
