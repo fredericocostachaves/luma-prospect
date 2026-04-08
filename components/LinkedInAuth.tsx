@@ -69,7 +69,6 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
             <h3 className="font-semibold text-gray-900 leading-none mb-1">
               {reconnectAccountId ? 'Reconectar Conta' : 'Conectar Conta'}
             </h3>
-            <span className="text-[10px] text-gray-500 font-medium">LinkedIn via Unipile</span>
           </div>
           <button 
             onClick={onClose}
