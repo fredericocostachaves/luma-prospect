@@ -88,7 +88,7 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
 
               <div className="text-center py-4">
                 <p className="text-sm text-gray-600">
-                  Você será redirecionado para o assistente de conexão segura do Unipile para vincular sua conta do LinkedIn.
+                  Você será redirecionado para o assistente de conexão segura para vincular sua conta do LinkedIn.
                 </p>
               </div>
 
@@ -106,12 +106,6 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
                   </>
                 )}
               </button>
-        </div>
-
-        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-center gap-2">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-            Powered by Unipile
-          </span>
         </div>
       </div>
     </div>
