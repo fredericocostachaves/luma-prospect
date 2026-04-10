@@ -131,39 +131,94 @@ export const deleteAccount = async (accountId: string): Promise<void> => {
   });
 };
 
-export interface UnipileChatMessage {
-  id: string;
+export interface AttachmentSize {
+  width?: number;
+  height?: number;
+}
+
+export interface Attachment {
+  id?: string;
+  file_size?: number;
+  unavailable?: boolean;
+  mimetype?: string;
+  url?: string;
+  url_expires_at?: number;
+  type?: string;
+  size?: AttachmentSize;
+  sticker?: boolean;
+  gif?: boolean;
+  duration?: number;
+  voice_note?: boolean;
+  file_name?: string;
+  starts_at?: number;
+  expires_at?: number;
+  time_range?: number;
+}
+
+export interface Quoted {
+  message_id?: string;
+  provider_id?: string;
+  sender_id?: string;
   text?: string;
-  timestamp: string;
-  sender_id: string;
-  account_id: string;
-  chat_id: string;
-  type: string;
-  status?: string;
+  attachments?: Attachment[];
+}
+
+export interface Reaction {
+  value?: string;
+  sender_id?: string;
+  is_sender?: boolean;
+}
+
+export interface LastMessage {
+  message_id?: string;
+  provider_id?: string;
+  sender_id?: string;
+  text?: string;
+  attachments?: Attachment[];
+  id?: string;
+  chat_id?: string;
+  chat_provider_id?: string;
+  timestamp?: string;
+  is_sender?: number;
+  quoted?: Quoted;
+  reactions?: Reaction[];
+  seen?: number;
+  seen_by?: Record<string, any>;
+  hidden?: number;
+  deleted?: number;
+  edited?: number;
+  is_event?: number;
+  delivered?: number;
+  behavior?: number;
+  event_type?: string;
 }
 
 export interface UnipileChat {
+  object?: string;
   id: string;
-  account_id: string;
+  account_id?: string;
   account_type?: string;
+  provider_id?: string;
+  attendee_provider_id?: string;
   name?: string;
-  last_message?: UnipileChatMessage;
+  type?: number;
+  timestamp?: string;
   unread_count?: number;
-  participants?: Array<{
-    id: string;
-    name?: string;
-    avatar_url?: string;
-    username?: string;
-    title?: string;
-    company?: string;
-  }>;
-  created_at?: string;
-  updated_at?: string;
-  snippet?: string;
+  archived?: number;
+  muted_until?: any;
+  read_only?: number;
+  disabledFeatures?: string[];
+  subject?: string;
+  organization_id?: string;
+  mailbox_id?: string;
+  content_type?: string;
+  folder?: string[];
+  pinned?: number;
+  lastMessage?: LastMessage;
 }
 
 export interface UnipileChatsResponse {
-  object: string;
+  object?: string;
   items?: UnipileChat[];
   cursor?: string;
 }
@@ -206,17 +261,34 @@ export const listChats = async (params?: ListChatsParams): Promise<UnipileChatsR
   }
 };
 
+export const getChat = async (chatId: string): Promise<UnipileChat | null> => {
+  try {
+    const url = `${API_BASE_URL}/api/v1/unipile/chats/${chatId}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+
+    return await parseJsonResponse(response);
+  } catch (error) {
+    console.error(`Erro ao buscar chat ${chatId}:`, error);
+    return null;
+  }
+};
+
 export interface UnipileChatAttendee {
-  id: string;
   object?: string;
+  id: string;
   account_id?: string;
+  provider_id?: string;
   name?: string;
-  username?: string;
+  is_self?: number;
+  hidden?: number;
   picture_url?: string;
   profile_url?: string;
-  title?: string;
-  company?: string;
-  linkedin_id?: string;
+  specifics?: Record<string, any>;
 }
 
 export const getChatAttendee = async (attendeeId: string): Promise<UnipileChatAttendee | null> => {

@@ -57,7 +57,7 @@ const removeDuplicateAccounts = async (accounts: any[]): Promise<string[]> => {
 
       // Deletar todas menos a primeira (mais antiga)
       for (let i = 1; i < sorted.length; i++) {
-        console.log(`Deletando conta duplicada: ${sorted[i].id} (${sorted[i].name})`);
+
         await deleteAccount(sorted[i].id);
         deletedIds.push(sorted[i].id);
       }
@@ -86,25 +86,25 @@ const App: React.FC = () => {
 
     const fetchAccounts = async () => {
       try {
-        console.log('Iniciando fetchAccounts...');
+
         const params = new URLSearchParams(window.location.search);
         const isSuccess = params.get('status') === 'success';
         // 1. Tentar carregar do Unipile (via backend) para status em tempo real
         let unipileResponse = await listAccounts();
-        console.log('Resposta do Unipile:', unipileResponse);
+
         let accountsToDisplay: Account[] = [];
         
         if (unipileResponse && unipileResponse.items && unipileResponse.items.length > 0) {
-          console.log('Detectando duplicatas...');
+
           // Detectar e remover duplicatas
           const deletedIds = await removeDuplicateAccounts(unipileResponse.items);
-          console.log('IDs deletados:', deletedIds);
+
 
           // Filtrar contas deletadas localmente
           if (deletedIds.length > 0) {
-            console.log(`Filtrando ${deletedIds.length} contas deletadas:`, deletedIds);
+
             unipileResponse.items = unipileResponse.items.filter((acc: any) => !deletedIds.includes(acc.id));
-            console.log('Items após filtro:', unipileResponse.items);
+
           }
 
           // Formatar contas com a resposta atualizada
@@ -119,7 +119,7 @@ const App: React.FC = () => {
                 initials: acc.name.substring(0, 2).toUpperCase()
               };
             });
-            console.log(`Total de contas após limpeza: ${accountsToDisplay.length}`, accountsToDisplay);
+
           }
         } else {
           // 2. Fallback: carregar do Supabase se o Unipile não retornar nada
@@ -145,9 +145,9 @@ const App: React.FC = () => {
           }
         }
 
-        console.log('isMounted:', isMounted, 'accountsToDisplay length:', accountsToDisplay.length);
+
         if (isMounted && accountsToDisplay.length > 0) {
-          console.log('Atualizando estado com:', accountsToDisplay);
+
           setAccounts(accountsToDisplay);
           const targetIndex = isSuccess ? accountsToDisplay.length - 1 : 0;
           setCurrentAccount(accountsToDisplay[targetIndex]);
@@ -209,7 +209,7 @@ const App: React.FC = () => {
 
     // Salvar conta no banco de dados (Supabase)
     try {
-      console.log('Persistindo conta no banco de dados:', formattedAccount.id);
+
       
       type AccountInsert = Database['public']['Tables']['accounts']['Insert'];
       const accountToInsert: AccountInsert = {
@@ -231,7 +231,7 @@ const App: React.FC = () => {
         alert('Erro ao salvar a conta. Tente novamente.');
         return;
       } else {
-        console.log('Conta salva com sucesso no Supabase.');
+
       }
     } catch (err) {
       console.error('Erro inesperado ao salvar conta:', err);

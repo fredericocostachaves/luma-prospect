@@ -50,7 +50,7 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
         response = await getHostedAuthLink();
       }
 
-      console.log('Link gerado:', response.url);
+
       window.location.href = response.url;
 
     } catch (err: any) {

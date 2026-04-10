@@ -32,7 +32,7 @@ const AudienceFilter: React.FC = () => {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Searching with filters:", filters);
+
     // Switch back to list view to simulate results
     setActiveTab('list');
   };

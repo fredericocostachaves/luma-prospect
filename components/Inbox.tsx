@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Check, X, MessageSquare, Clock } from 'lucide-react';
-import { UnipileChatsResponse, UnipileChat, getChatAttendee } from '../services/unipileService';
+import { UnipileChatsResponse, UnipileChat, getChat, getChatAttendee } from '../services/unipileService';
 
 const formatTimeAgo = (dateString?: string): string => {
   if (!dateString) return '';
@@ -48,17 +48,18 @@ const Inbox: React.FC<InboxProps> = ({ chatsData }) => {
 
       const transformed: InboxMessageData[] = await Promise.all(
         chatsData.items.map(async (chat: UnipileChat) => {
-          const participant = chat.participants?.[0];
-          let avatarUrl = participant?.avatar_url;
-          let attendeeName = chat.name || participant?.name || participant?.username;
+          const participant = (chat as any).participants?.[0];
+          let avatarUrl = (participant as any)?.avatar_url;
+          let attendeeName = chat.name || (participant as any)?.name || (participant as any)?.username;
 
-          if (chat.last_message?.sender_id) {
-            const attendee = await getChatAttendee(chat.last_message.sender_id);
-            if (attendee) {
-              if (attendee.picture_url) avatarUrl = attendee.picture_url;
-              if (!attendeeName || attendeeName === '(Sem título)') {
-                attendeeName = attendee.name || attendee.username || '(Sem título)';
-              }
+          // Buscar detalhes do chat primeiro para mapear participantes
+          const chatDetails = await getChat(chat.id);
+          const senderId = chat.attendee_provider_id;
+          const attendee = await getChatAttendee(senderId);
+          if (attendee) {
+            if (attendee.picture_url) avatarUrl = attendee.picture_url;
+            if (!attendeeName || attendeeName === '(Sem título)') {
+              attendeeName = attendee.name || '(Sem título)';
             }
           }
 
@@ -66,8 +67,8 @@ const Inbox: React.FC<InboxProps> = ({ chatsData }) => {
             id: chat.id,
             name: attendeeName || '(Sem título)',
             company: participant?.company || participant?.title || '',
-            message: chat.last_message?.text || chat.snippet || 'Sem mensagem',
-            time: formatTimeAgo(chat.last_message?.timestamp || chat.updated_at),
+            message: chatDetails.lastMessage?.text || 'Sem mensagem',
+            time: formatTimeAgo(chat.lastMessage?.timestamp || (chat as any).timestamp || (chat as any).updated_at),
             unread: (chat.unread_count || 0) > 0,
             avatarUrl,
             chatId: chat.id,
