@@ -2,7 +2,7 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, ChevronDown, ChevronUp, Plus, Check, Columns } from 'lucide-react';
 import { supabase } from './utils/supabase';
 import { Database } from './database.types';
-import { listAccounts, deleteAccount } from './services/unipileService';
+import { listAccounts, deleteAccount, listChats, UnipileChatsResponse } from './services/unipileService';
 
 // Lazy load heavy components
 const CampaignBuilder = lazy(() => import('./components/CampaignBuilder'));
@@ -77,6 +77,9 @@ const App: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+
+  // Inbox State
+  const [chats, setChats] = useState<UnipileChatsResponse | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -165,6 +168,20 @@ const App: React.FC = () => {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (activeTab === Tab.INBOX && currentAccount) {
+      const fetchChats = async () => {
+        try {
+          const response = await listChats({ account_id: currentAccount.id, limit: 50 });
+          setChats(response);
+        } catch (err) {
+          console.error('Erro ao carregar chats:', err);
+        }
+      };
+      void fetchChats();
+    }
+  }, [activeTab, currentAccount]);
 
   const handleAddAccount = async (newAccount: any) => {
     const formattedAccount: Account = {
@@ -421,7 +438,7 @@ const App: React.FC = () => {
             )}
             {activeTab === Tab.INBOX && (
               <Suspense fallback={<div className="flex items-center justify-center h-96 text-gray-500">Carregando...</div>}>
-                <Inbox />
+                <Inbox chatsData={chats} />
               </Suspense>
             )}
             {activeTab === Tab.PIPELINE && (
