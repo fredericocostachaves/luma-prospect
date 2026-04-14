@@ -306,3 +306,148 @@ export const getChatAttendee = async (attendeeId: string): Promise<UnipileChatAt
     return null;
   }
 };
+
+// --- Message/Chat/Post helpers ---
+
+export interface UnipileMessage {
+  id: string;
+  chat_id: string;
+  sender_id: string;
+  text: string;
+  timestamp?: string;
+  is_sender?: boolean;
+}
+
+export interface ListChatMessagesParams {
+  chat_id: string;
+  limit?: number;
+  before?: string;
+  after?: string;
+  account_id?: string;
+}
+
+export interface ListChatMessagesResponse {
+  object?: string;
+  items?: UnipileMessage[];
+  cursor?: string;
+}
+
+export const listChatMessages = async (params: ListChatMessagesParams): Promise<ListChatMessagesResponse> => {
+  try {
+    // Use the chat-specific endpoint to avoid mixing messages across chats
+    const queryParams = new URLSearchParams();
+    if (params.limit) queryParams.set('limit', String(params.limit));
+    if (params.before) queryParams.set('before', params.before);
+    if (params.after) queryParams.set('after', params.after);
+    if (params.account_id) queryParams.set('account_id', params.account_id);
+    const url = `${API_BASE_URL}/api/v1/unipile/chats/${encodeURIComponent(params.chat_id)}/messages${queryParams.toString() ? `?${queryParams}` : ''}`;
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    });
+    return await parseJsonResponse(response);
+  } catch (error) {
+    console.error('Erro ao listar mensagens do chat:', error);
+    throw error;
+  }
+};
+
+export interface SendMessageRequest {
+  chat_id: string;
+  text: string;
+  sender_id: string;
+  account_id?: string;
+}
+
+export interface SendMessageResponse {
+  object?: string;
+  id?: string;
+  status?: string;
+}
+
+export const sendMessageInChat = async (payload: SendMessageRequest): Promise<SendMessageResponse> => {
+  try {
+    // Post directly to the chat messages endpoint to ensure message is associated with the correct chat
+    const query = payload.account_id ? `?account_id=${encodeURIComponent(payload.account_id)}` : '';
+    const url = `${API_BASE_URL}/api/v1/unipile/chats/${encodeURIComponent(payload.chat_id)}/messages${query}`;
+    const body: any = {
+      text: payload.text,
+      sender_id: payload.sender_id
+    };
+    // Include account_id in request body if provided (avoid sending null/undefined)
+    if (payload.account_id) {
+      body.account_id = payload.account_id;
+    }
+
+    console.debug('[unipileService] POST', url, 'body=', body);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+    return await parseJsonResponse(response);
+  } catch (error) {
+    console.error('Erro ao enviar mensagem:', error);
+    throw error;
+  }
+};
+
+export interface StartChatRequest {
+  account_id: string;
+  attendee_id: string;
+  initial_message?: string;
+}
+
+export interface StartChatResponse {
+  object?: string;
+  chat_id?: string;
+}
+
+export const startChat = async (payload: StartChatRequest): Promise<StartChatResponse> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/chats`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    return await parseJsonResponse(response);
+  } catch (error) {
+    console.error('Erro ao iniciar chat:', error);
+    throw error;
+  }
+};
+
+export interface SendConnectRequest {
+  account_id: string;
+  attendee_id: string;
+  message?: string;
+}
+
+export interface SendConnectResponse {
+  object?: string;
+  status?: string;
+}
+
+export const sendConnectRequest = async (payload: SendConnectRequest): Promise<SendConnectResponse> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/connect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+    return await parseJsonResponse(response);
+  } catch (error) {
+    console.error('Erro ao enviar solicitação de conexão:', error);
+    throw error;
+  }
+};

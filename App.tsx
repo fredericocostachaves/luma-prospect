@@ -438,7 +438,7 @@ const App: React.FC = () => {
             )}
             {activeTab === Tab.INBOX && (
               <Suspense fallback={<div className="flex items-center justify-center h-96 text-gray-500">Carregando...</div>}>
-                <Inbox chatsData={chats} />
+                <Inbox chatsData={chats} currentAccount={currentAccount} />
               </Suspense>
             )}
             {activeTab === Tab.PIPELINE && (

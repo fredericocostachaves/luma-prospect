@@ -30,11 +30,21 @@ interface InboxMessageData {
 
 interface InboxProps {
   chatsData?: UnipileChatsResponse | null;
+  currentAccount?: { id: string; name: string } | null;
 }
 
-const Inbox: React.FC<InboxProps> = ({ chatsData }) => {
+import ChatView from './ChatView';
+import { sendConnectRequest } from '../services/unipileService';
+
+const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount }) => {
   const [messages, setMessages] = useState<InboxMessageData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [showConnectModal, setShowConnectModal] = useState(false);
+  const [connectAttendeeId, setConnectAttendeeId] = useState<string | null>(null);
+  const [connectMessage, setConnectMessage] = useState('');
+  const [connectLoading, setConnectLoading] = useState(false);
+  const [connectSuccess, setConnectSuccess] = useState(false);
 
   useEffect(() => {
     const transformChats = async () => {
@@ -109,7 +119,7 @@ const Inbox: React.FC<InboxProps> = ({ chatsData }) => {
           <div className="p-8 text-center text-gray-500">Nenhuma mensagem encontrada</div>
         ) : (
           messages.map((msg) => (
-          <div key={msg.id} className={`p-5 hover:bg-gray-50 transition-all flex gap-4 group cursor-pointer ${msg.unread ? 'bg-blue-50/10' : ''}`}>
+          <div key={msg.id} onClick={() => setSelectedChatId(msg.chatId)} className={`p-5 hover:bg-gray-50 transition-all flex gap-4 group cursor-pointer ${msg.unread ? 'bg-blue-50/10' : ''}`}>
               <div className="flex flex-col items-center gap-2">
                 {msg.avatarUrl ? (
                   <img src={msg.avatarUrl} alt={msg.name} className="w-10 h-10 rounded-full object-cover shadow-sm" />
@@ -141,15 +151,15 @@ const Inbox: React.FC<InboxProps> = ({ chatsData }) => {
                 
                 {/* Actions Bar */}
                 <div className="flex items-center gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
-                    <button className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-brand-700 text-xs font-semibold rounded-lg hover:bg-brand-100 transition-colors border border-brand-100">
+                    <button onClick={(e) => { e.stopPropagation(); /* Qualify action placeholder */ }} className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-brand-700 text-xs font-semibold rounded-lg hover:bg-brand-100 transition-colors border border-brand-100">
                         <Check className="w-3.5 h-3.5" />
                         Qualificar (Pipeline)
                     </button>
-                    <button className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors border border-gray-200">
+                    <button onClick={(e) => { e.stopPropagation(); setSelectedChatId(msg.chatId); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors border border-gray-200">
                         <MessageSquare className="w-3.5 h-3.5" />
                         Responder
                     </button>
-                    <button className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors ml-auto" title="Arquivar">
+                    <button onClick={(e) => { e.stopPropagation(); /* archive placeholder */ }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors ml-auto" title="Arquivar">
                         <X className="w-4 h-4" />
                     </button>
                 </div>
@@ -162,6 +172,10 @@ const Inbox: React.FC<InboxProps> = ({ chatsData }) => {
               )}
           </div>
         ))
+        )}
+
+        {selectedChatId && currentAccount && (
+          <ChatView chatId={selectedChatId} currentAccount={currentAccount as any} onClose={() => setSelectedChatId(null)} />
         )}
       </div>
       
