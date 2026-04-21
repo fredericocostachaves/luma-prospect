@@ -80,6 +80,22 @@ export const listAccounts = async (): Promise<any> => {
   }
 };
 
+export const syncAccounts = async (userId: string): Promise<any> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/accounts/sync?userId=${encodeURIComponent(userId)}`, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+
+    return await parseJsonResponse(response);
+  } catch (error) {
+    console.error('Erro ao sincronizar contas do Unipile:', error);
+    throw error;
+  }
+};
+
 /**
  * Redirect to the Unipile Hosted Auth Wizard
  */

@@ -3,6 +3,7 @@ import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, L
 import { supabase } from './utils/supabase';
 import { Database } from './database.types';
 import { listAccounts, deleteAccount, listChats, UnipileChatsResponse } from './services/unipileService';
+import Login from './components/Login';
 
 // Lazy load heavy components
 const CampaignBuilder = lazy(() => import('./components/CampaignBuilder'));
@@ -72,6 +73,8 @@ const App: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [reconnectAccountId, setReconnectAccountId] = useState<string | undefined>(undefined);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!localStorage.getItem('userId'));
+  const [currentUserId, setCurrentUserId] = useState<string | null>(localStorage.getItem('userId'));
   
   // Account State
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -91,6 +94,8 @@ const App: React.FC = () => {
         const isSuccess = params.get('status') === 'success';
         // 1. Tentar carregar do Unipile (via backend) para status em tempo real
         let unipileResponse = await listAccounts();
+
+        
 
         let accountsToDisplay: Account[] = [];
         
@@ -126,7 +131,7 @@ const App: React.FC = () => {
           const { data, error } = await (supabase as any)
             .from('accounts')
             .select('*')
-            .eq('user_id', DEFAULT_USER_ID)
+            .eq('user_id', currentUserId!)
             .order('created_at', { ascending: true });
 
           if (error) {
@@ -218,7 +223,7 @@ const App: React.FC = () => {
         email: formattedAccount.email,
         status: formattedAccount.status,
         initials: formattedAccount.initials,
-        user_id: DEFAULT_USER_ID,
+        user_id: currentUserId!,
         proxy_settings: newAccount.proxy_settings || null
       };
 
@@ -242,6 +247,15 @@ const App: React.FC = () => {
     setAccounts(prev => [...prev, formattedAccount]);
     setCurrentAccount(formattedAccount);
   };
+
+  const handleLoginSuccess = (userId: string, email: string) => {
+    setCurrentUserId(userId);
+    setIsAuthenticated(true);
+  };
+
+  if (!isAuthenticated || !currentUserId) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
 
   const NavItem = ({ tab, icon: Icon, label }: { tab: Tab; icon: any; label: string }) => (
     <button
@@ -375,7 +389,15 @@ const App: React.FC = () => {
               <Settings className="w-4.5 h-4.5 text-gray-400" />
               Configurações
             </button>
-            <button className="flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl">
+            <button 
+              onClick={() => {
+                localStorage.removeItem('userId');
+                localStorage.removeItem('userEmail');
+                setIsAuthenticated(false);
+                setCurrentUserId(null);
+              }}
+              className="flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl"
+            >
               <LogOut className="w-4.5 h-4.5 text-red-400" />
               Sair
             </button>
