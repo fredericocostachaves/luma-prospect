@@ -28,6 +28,12 @@ export default defineConfig(({ mode }) => {
       },
       build: {
         chunkSizeWarningLimit: 1200,
+        rollupOptions: {
+          input: {
+            main: path.resolve(__dirname, 'index.html'),
+            resetPassword: path.resolve(__dirname, 'reset-password.html'),
+          },
+        },
       }
     };
-});
+  });

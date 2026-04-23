@@ -1,72 +1,40 @@
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || '';
-
-const parseJsonResponse = async (response: Response): Promise<any> => {
-  const text = await response.text();
-  const contentType = response.headers.get('content-type');
-
-  if (!response.ok) {
-    if (response.status === 401) {
-      throw new Error('Usuário ou senha inválidos');
-    }
-    throw new Error(`Erro na requisição: ${response.status} - ${text}`);
-  }
-
-  if (!contentType || !contentType.includes('application/json')) {
-    console.error('Resposta inesperada (não-JSON):', text.substring(0, 100));
-    throw new Error('O servidor retornou HTML em vez de JSON.');
-  }
-
-  return JSON.parse(text);
-};
-
-export interface RegisterRequest {
-  email: string;
-  password: string;
-}
+import supabase from '../utils/supabase'
 
 export interface LoginRequest {
-  email: string;
-  password: string;
+  email: string
+  password: string
 }
 
 export interface AuthResponse {
-  userId: string;
-  email: string;
-  message?: string;
+  userId: string
+  email: string
+  message?: string
 }
-
-export const register = async (payload: RegisterRequest): Promise<AuthResponse> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/users/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    return await parseJsonResponse(response);
-  } catch (error) {
-    console.error('Erro ao registrar:', error);
-    throw error;
-  }
-};
 
 export const login = async (payload: LoginRequest): Promise<AuthResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/users/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: payload.email,
+      password: payload.password
+    })
 
-    return await parseJsonResponse(response);
-  } catch (error) {
-    console.error('Erro ao fazer login:', error);
-    throw error;
+    if (error) {
+      if (error.message.includes('Invalid login') || error.message.includes('invalid')) {
+        return { userId: '', email: '', message: 'invalid' }
+      }
+      return { userId: '', email: '', message: error.message }
+    }
+
+    return {
+      userId: data.user?.id || '',
+      email: data.user?.email || payload.email,
+      message: 'Login realizado com sucesso'
+    }
+  } catch (err: any) {
+    return { userId: '', email: '', message: err.message || 'Erro ao fazer login' }
   }
-};
+}
+
+export const logout = async (): Promise<void> => {
+  await supabase.auth.signOut()
+}

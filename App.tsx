@@ -2,8 +2,9 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, ChevronDown, ChevronUp, Plus, Check, Columns } from 'lucide-react';
 import { supabase } from './utils/supabase';
 import { Database } from './database.types';
-import { listAccounts, deleteAccount, listChats, UnipileChatsResponse, syncLinkedInAccount } from './services/unipileService';
+import { listAccounts, listChats, UnipileChatsResponse, syncLinkedInAccount } from './services/unipileService';
 import Login from './components/Login';
+import ResetPassword from './components/ResetPassword';
 
 // Lazy load heavy components
 const CampaignBuilder = lazy(() => import('./components/CampaignBuilder'));
@@ -25,56 +26,18 @@ interface Account {
   id: string;
   name: string;
   email: string;
-  status: 'Ativo' | 'Desconectado' | 'Restrito' | 'Não sincronizado';
+  status: 'Ativo' | 'Desconectado' | 'Restrito';
   initials: string;
 }
 
-
-const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001';
-
-// Função para detectar e remover contas duplicadas, mantendo a mais antiga
-const removeDuplicateAccounts = async (accounts: any[]): Promise<string[]> => {
-  const accountsByName: { [key: string]: any[] } = {};
-  const deletedIds: string[] = [];
-
-  // Agrupar contas por nome
-  accounts.forEach(acc => {
-    const name = acc.name.toLowerCase();
-    if (!accountsByName[name]) {
-      accountsByName[name] = [];
-    }
-    accountsByName[name].push(acc);
-  });
-
-  // Deletar contas duplicadas (mantendo a mais antiga)
-  for (const duplicates of Object.values(accountsByName)) {
-    if (duplicates.length > 1) {
-      // Ordenar por createdAt (mais antiga primeiro)
-      const sorted = duplicates.sort((a: any, b: any) => {
-        const dateA = new Date(a.created_at || 0).getTime();
-        const dateB = new Date(b.created_at || 0).getTime();
-        return dateA - dateB;
-      });
-
-      // Deletar todas menos a primeira (mais antiga)
-      for (let i = 1; i < sorted.length; i++) {
-
-        await deleteAccount(sorted[i].id);
-        deletedIds.push(sorted[i].id);
-      }
-    }
-  }
-
-  return deletedIds;
-};
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.DASHBOARD);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [reconnectAccountId, setReconnectAccountId] = useState<string | undefined>(undefined);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!localStorage.getItem('userId'));
-  const [currentUserId, setCurrentUserId] = useState<string | null>(localStorage.getItem('userId'));
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   
   // Account State
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -83,6 +46,31 @@ const App: React.FC = () => {
 
   // Inbox State
   const [chats, setChats] = useState<UnipileChatsResponse | null>(null);
+
+  const isResetPasswordPage = window.location.pathname === '/reset-password' || window.location.search.includes('type=recovery');
+
+  useEffect(() => {
+    const initAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        setIsAuthenticated(true)
+        setCurrentUserId(session.user.id)
+      }
+    }
+    initAuth()
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setIsAuthenticated(true)
+        setCurrentUserId(session.user.id)
+      } else {
+        setIsAuthenticated(false)
+        setCurrentUserId(null)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   useEffect(() => {
     let isMounted = true;
@@ -112,10 +100,12 @@ const fetchAccounts = async () => {
         }
         
         // 2. Buscar contas vinculadas ao usuário no Supabase
+        if (!currentUserId) return;
+        
         const { data: linkedAccounts, error: linkedError } = await (supabase as any)
           .from('accounts')
           .select('*')
-          .eq('user_id', currentUserId!)
+          .eq('user_id', currentUserId)
           .order('created_at', { ascending: true });
 
         if (linkedError) {
@@ -216,6 +206,11 @@ if (isMounted) {
   }, [activeTab, currentAccount]);
 
   const handleAddAccount = async (newAccount: any) => {
+    if (!currentUserId) {
+      alert('Sessão expirada. Faça login novamente.');
+      return;
+    }
+    
     const formattedAccount: Account = {
       id: newAccount.id,
       name: newAccount.name,
@@ -250,7 +245,7 @@ if (isMounted) {
         email: formattedAccount.email,
         status: formattedAccount.status,
         initials: formattedAccount.initials,
-        user_id: currentUserId!,
+        user_id: currentUserId,
         proxy_settings: newAccount.proxy_settings || null
       };
 
@@ -275,12 +270,15 @@ if (isMounted) {
     setCurrentAccount(formattedAccount);
   };
 
-  const handleLoginSuccess = (userId: string, email: string) => {
+  const handleLoginSuccess = (userId: string) => {
     setCurrentUserId(userId);
     setIsAuthenticated(true);
   };
 
   if (!isAuthenticated || !currentUserId) {
+    if (isResetPasswordPage) {
+      return <ResetPassword />;
+    }
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
@@ -338,7 +336,7 @@ if (isMounted) {
                     </div>
                     <div className="flex-1 overflow-hidden">
                       <p className="text-sm font-semibold text-gray-700 truncate">{currentAccount?.name || 'Nenhuma conta'}</p>
-                      <p className={`text-xs ${currentAccount?.status === 'Ativo' ? 'text-green-600' : currentAccount?.status === 'Não sincronizado' ? 'text-yellow-600' : 'text-red-500'}`}>
+                      <p className={`text-xs ${currentAccount?.status === 'Ativo' ? 'text-green-600' : currentAccount?.status === 'Desconectado' ? 'text-yellow-600' : 'text-red-500'}`}>
                         {currentAccount?.status || 'Não sincronizado'}
                       </p>
                     </div>
@@ -370,7 +368,7 @@ if (isMounted) {
                                </div>
                                <div className="flex-1 text-left truncate">
                                   <p className="font-medium">{account.name}</p>
-                                  <p className={`text-[10px] ${account.status === 'Ativo' ? 'text-green-600' : account.status === 'Não sincronizado' ? 'text-yellow-600' : 'text-red-500'}`}>{account.status}</p>
+                                  <p className={`text-[10px] ${account.status === 'Ativo' ? 'text-green-600' : account.status === 'Desconectado' ? 'text-yellow-600' : 'text-red-500'}`}>{account.status}</p>
                                </div>
                                {currentAccount?.id === account.id && <Check className="w-3 h-3" />}
                             </button>
@@ -424,11 +422,10 @@ if (isMounted) {
               Configurações
             </button>
             <button 
-              onClick={() => {
-                localStorage.removeItem('userId');
-                localStorage.removeItem('userEmail');
-                setIsAuthenticated(false);
-                setCurrentUserId(null);
+              onClick={async () => {
+                await supabase.auth.signOut()
+                setIsAuthenticated(false)
+                setCurrentUserId(null)
               }}
               className="flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl"
             >

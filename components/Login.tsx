@@ -1,54 +1,57 @@
-import React, { useState } from 'react';
-import { Mail, Lock, LogIn, UserPlus, AlertCircle } from 'lucide-react';
-import { register, login } from '../services/authService';
+import React, { useState, useEffect } from 'react';
+import { Mail, Lock, LogIn, AlertCircle } from 'lucide-react';
+import { login } from '../services/authService';
+import supabase from '../utils/supabase';
 
 interface LoginProps {
   onLoginSuccess: (userId: string, email: string) => void;
 }
 
-type AuthMode = 'login' | 'register';
+type AuthMode = 'login' | 'reset';
 
 const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('error') === 'password_reset_failed') {
+      setError('Link de redefinição expirado ou inválido. Por favor, solicite um novo link.');
+      params.delete('error');
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMessage('');
 
-    if (!email || !password) {
-      setError('Preencha todos os campos');
-      return;
-    }
-
-    if (mode === 'register' && password !== confirmPassword) {
-      setError('As senhas não coincidem');
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres');
+    if (!email) {
+      setError('Preencha o e-mail');
       return;
     }
 
     setLoading(true);
 
     try {
-      if (mode === 'register') {
-        await register({ email, password });
-        setMode('login');
-        setError('Conta criada ou redefinida! Faça login para continuar.');
-        setPassword('');
-        setConfirmPassword('');
-      } else {
+      if (mode === 'login') {
+        if (!password) {
+          setError('Preencha a senha');
+          return;
+        }
         const response = await login({ email, password });
-        localStorage.setItem('userId', response.userId);
-        localStorage.setItem('userEmail', response.email);
         onLoginSuccess(response.userId, response.email);
+      } else {
+        await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        setSuccessMessage('E-mail de redefinição enviado! Verifique sua caixa de entrada.');
+        setMode('login');
       }
     } catch (err: any) {
       setError(err.message || 'Erro ao processar solicitação');
@@ -58,10 +61,9 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   };
 
   const toggleMode = () => {
-    setMode(mode === 'login' ? 'register' : 'login');
+    setMode(mode === 'login' ? 'reset' : 'login');
     setError('');
-    setPassword('');
-    setConfirmPassword('');
+    setSuccessMessage('');
   };
 
   return (
@@ -72,12 +74,12 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             <Mail className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-white">
-            {mode === 'login' ? 'Bem-vindo de volta' : 'Criar conta | Redefinir Senha'}
+            {mode === 'login' ? 'Bem-vindo de volta' : 'Redefinir Senha'}
           </h1>
           <p className="text-slate-400 mt-2">
             {mode === 'login' 
               ? 'Entre para continuar usando o Luma Prospect' 
-              : 'Registre-se para começar a usar o Luma Prospect'}
+              : 'Informe seu e-mail para receber o link de redefinição'}
           </p>
         </div>
 
@@ -87,6 +89,12 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 {error}
+              </div>
+            )}
+
+            {successMessage && (
+              <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-400 text-sm">
+                {successMessage}
               </div>
             )}
 
@@ -107,37 +115,20 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Senha
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 bg-slate-900/50 border border-slate-600/50 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  placeholder="••••••••"
-                  autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                />
-              </div>
-            </div>
-
-            {mode === 'register' && (
+            {mode === 'login' && (
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Confirmar Senha
+                  Senha
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
                   <input
                     type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     className="w-full pl-11 pr-4 py-3 bg-slate-900/50 border border-slate-600/50 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     placeholder="••••••••"
-                    autoComplete="new-password"
+                    autoComplete="current-password"
                   />
                 </div>
               </div>
@@ -156,10 +147,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                   Entrar
                 </>
               ) : (
-                <>
-                  <UserPlus className="w-5 h-5" />
-                  Criar Conta | Redefinir Senha
-                </>
+                'Enviar E-mail de Redefinição'
               )}
             </button>
           </form>
@@ -171,7 +159,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               className="text-sm text-slate-400 hover:text-blue-400 transition-colors"
             >
               {mode === 'login' ? (
-                <><span className="font-medium text-blue-400">Criar conta | Redefinir Senha</span></>
+                <><span className="font-medium text-blue-400">Esqueci a senha</span></>
               ) : (
                 <>Já tem uma conta? <span className="font-medium text-blue-400">Entrar</span></>
               )}
