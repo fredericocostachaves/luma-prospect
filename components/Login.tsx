@@ -41,7 +41,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       if (mode === 'register') {
         await register({ email, password });
         setMode('login');
-        setError('Conta criada! Faça login para continuar.');
+        setError('Conta criada ou redefinida! Faça login para continuar.');
         setPassword('');
         setConfirmPassword('');
       } else {
@@ -72,7 +72,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             <Mail className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-white">
-            {mode === 'login' ? 'Bem-vindo de volta' : 'Criar conta'}
+            {mode === 'login' ? 'Bem-vindo de volta' : 'Criar conta | Redefinir Senha'}
           </h1>
           <p className="text-slate-400 mt-2">
             {mode === 'login' 
@@ -158,7 +158,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               ) : (
                 <>
                   <UserPlus className="w-5 h-5" />
-                  Criar Conta
+                  Criar Conta | Redefinir Senha
                 </>
               )}
             </button>
@@ -171,7 +171,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               className="text-sm text-slate-400 hover:text-blue-400 transition-colors"
             >
               {mode === 'login' ? (
-                <>Não tem uma conta? <span className="font-medium text-blue-400">Criar conta</span></>
+                <><span className="font-medium text-blue-400">Criar conta | Redefinir Senha</span></>
               ) : (
                 <>Já tem uma conta? <span className="font-medium text-blue-400">Entrar</span></>
               )}

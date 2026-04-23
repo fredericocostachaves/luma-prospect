@@ -3,11 +3,23 @@
  * Doc: https://developer.unipile.com/docs/hosted-auth
  */
 
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || '';
+
+const getApiUrl = (path: string) => {
+  if (API_BASE_URL) {
+    return `${API_BASE_URL}${path}`;
+  }
+  return path;
+};
+
 const parseJsonResponse = async (response: Response): Promise<any> => {
   const text = await response.text();
   const contentType = response.headers.get('content-type');
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Sessão expirada. Faça login novamente.');
+    }
     throw new Error(`Erro na requisição: ${response.status} - ${text}`);
   }
 
@@ -25,7 +37,7 @@ export interface HostedAuthRequest {
   api_url: string;
   expiresOn: string;
   notify_url?: string;
-  name?: string; // internal user ID
+  name?: string;
   success_redirect_url?: string;
   failure_redirect_url?: string;
   reconnect_account?: string;
@@ -41,17 +53,21 @@ export interface HostedAuthResponse {
  * o link do Hosted Auth Wizard DEVE ser feita a partir de um processo de backend
  * intermediário para proteger a X-API-KEY. Nunca exponha sua chave no frontend.
  */
-const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || '';
-
-export const getHostedAuthLink = async (payload?: Partial<HostedAuthRequest>): Promise<HostedAuthResponse> => {
+export const getHostedAuthLink = async (name?: string): Promise<HostedAuthResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/accounts/link`, {
+    const url = getApiUrl('/api/v1/unipile/accounts/link');
+    let fetchUrl: string;
+    if (name) {
+      fetchUrl = url.includes('?') ? `${url}&name=${encodeURIComponent(name)}` : `${url}?name=${encodeURIComponent(name)}`;
+    } else {
+      fetchUrl = url;
+    }
+    const response = await fetch(fetchUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
-      },
-      body: payload ? JSON.stringify(payload) : undefined
+      }
     });
 
     return await parseJsonResponse(response);
@@ -66,7 +82,7 @@ export const getHostedAuthLink = async (payload?: Partial<HostedAuthRequest>): P
  */
 export const listAccounts = async (): Promise<any> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/accounts`, {
+    const response = await fetch(getApiUrl('/api/v1/unipile/accounts'), {
       method: 'GET',
       headers: {
         'Accept': 'application/json'
@@ -82,7 +98,7 @@ export const listAccounts = async (): Promise<any> => {
 
 export const syncAccounts = async (userId: string): Promise<any> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/accounts/sync?userId=${encodeURIComponent(userId)}`, {
+    const response = await fetch(getApiUrl(`/api/v1/unipile/accounts/sync?userId=${encodeURIComponent(userId)}`), {
       method: 'POST',
       headers: {
         'Accept': 'application/json'
@@ -92,6 +108,29 @@ export const syncAccounts = async (userId: string): Promise<any> => {
     return await parseJsonResponse(response);
   } catch (error) {
     console.error('Erro ao sincronizar contas do Unipile:', error);
+    throw error;
+  }
+};
+
+export interface LinkedInSyncRequest {
+  accountId: string;
+  userId: string;
+}
+
+export const syncLinkedInAccount = async (payload: LinkedInSyncRequest): Promise<any> => {
+  try {
+    const response = await fetch(getApiUrl('/api/v1/unipile/accounts/sync/linkedin'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    return await parseJsonResponse(response);
+  } catch (error) {
+    console.error('Erro ao sincronizar conta LinkedIn:', error);
     throw error;
   }
 };
@@ -119,7 +158,7 @@ export interface HostedReconnectResponse {
 
 export const getReconnectLink = async (payload: HostedReconnectRequest): Promise<HostedReconnectResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/accounts/reconnect`, {
+    const response = await fetch(getApiUrl('/api/v1/unipile/accounts/reconnect'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -139,7 +178,7 @@ export const getReconnectLink = async (payload: HostedReconnectRequest): Promise
  * Delete a specific account from Unipile
  */
 export const deleteAccount = async (accountId: string): Promise<void> => {
-  await fetch(`${API_BASE_URL}/api/v1/unipile/accounts/${accountId}`, {
+  await fetch(getApiUrl(`/api/v1/unipile/accounts/${accountId}`), {
     method: 'DELETE',
     headers: {
       'Accept': 'application/json'
@@ -262,7 +301,7 @@ export const listChats = async (params?: ListChatsParams): Promise<UnipileChatsR
       if (params.account_id) queryParams.set('account_id', params.account_id);
     }
 
-    const url = `${API_BASE_URL}/api/v1/unipile/chats${queryParams.toString() ? `?${queryParams}` : ''}`;
+    const url = getApiUrl(`/api/v1/unipile/chats${queryParams.toString() ? `?${queryParams}` : ''}`);
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -279,7 +318,7 @@ export const listChats = async (params?: ListChatsParams): Promise<UnipileChatsR
 
 export const getChat = async (chatId: string): Promise<UnipileChat | null> => {
   try {
-    const url = `${API_BASE_URL}/api/v1/unipile/chats/${chatId}`;
+    const url = getApiUrl(`/api/v1/unipile/chats/${chatId}`);
     const response = await fetch(url, {
       method: 'GET',
       headers: {
@@ -309,7 +348,7 @@ export interface UnipileChatAttendee {
 
 export const getChatAttendee = async (attendeeId: string): Promise<UnipileChatAttendee | null> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/chat-attendees/${attendeeId}`, {
+    const response = await fetch(getApiUrl(`/api/v1/unipile/chat-attendees/${attendeeId}`), {
       method: 'GET',
       headers: {
         'Accept': 'application/json'
@@ -350,13 +389,12 @@ export interface ListChatMessagesResponse {
 
 export const listChatMessages = async (params: ListChatMessagesParams): Promise<ListChatMessagesResponse> => {
   try {
-    // Use the chat-specific endpoint to avoid mixing messages across chats
     const queryParams = new URLSearchParams();
     if (params.limit) queryParams.set('limit', String(params.limit));
     if (params.before) queryParams.set('before', params.before);
     if (params.after) queryParams.set('after', params.after);
     if (params.account_id) queryParams.set('account_id', params.account_id);
-    const url = `${API_BASE_URL}/api/v1/unipile/chats/${encodeURIComponent(params.chat_id)}/messages${queryParams.toString() ? `?${queryParams}` : ''}`;
+    const url = getApiUrl(`/api/v1/unipile/chats/${encodeURIComponent(params.chat_id)}/messages${queryParams.toString() ? `?${queryParams}` : ''}`);
     const response = await fetch(url, {
       method: 'GET',
       headers: { 'Accept': 'application/json' }
@@ -383,14 +421,12 @@ export interface SendMessageResponse {
 
 export const sendMessageInChat = async (payload: SendMessageRequest): Promise<SendMessageResponse> => {
   try {
-    // Post directly to the chat messages endpoint to ensure message is associated with the correct chat
     const query = payload.account_id ? `?account_id=${encodeURIComponent(payload.account_id)}` : '';
-    const url = `${API_BASE_URL}/api/v1/unipile/chats/${encodeURIComponent(payload.chat_id)}/messages${query}`;
+    const url = getApiUrl(`/api/v1/unipile/chats/${encodeURIComponent(payload.chat_id)}/messages${query}`);
     const body: any = {
       text: payload.text,
       sender_id: payload.sender_id
     };
-    // Include account_id in request body if provided (avoid sending null/undefined)
     if (payload.account_id) {
       body.account_id = payload.account_id;
     }
@@ -425,7 +461,7 @@ export interface StartChatResponse {
 
 export const startChat = async (payload: StartChatRequest): Promise<StartChatResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/chats`, {
+    const response = await fetch(getApiUrl('/api/v1/unipile/chats'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -453,7 +489,7 @@ export interface SendConnectResponse {
 
 export const sendConnectRequest = async (payload: SendConnectRequest): Promise<SendConnectResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/unipile/connect`, {
+    const response = await fetch(getApiUrl('/api/v1/unipile/connect'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

@@ -2,7 +2,7 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, ChevronDown, ChevronUp, Plus, Check, Columns } from 'lucide-react';
 import { supabase } from './utils/supabase';
 import { Database } from './database.types';
-import { listAccounts, deleteAccount, listChats, UnipileChatsResponse } from './services/unipileService';
+import { listAccounts, deleteAccount, listChats, UnipileChatsResponse, syncLinkedInAccount } from './services/unipileService';
 import Login from './components/Login';
 
 // Lazy load heavy components
@@ -25,7 +25,7 @@ interface Account {
   id: string;
   name: string;
   email: string;
-  status: 'Ativo' | 'Desconectado' | 'Restrito';
+  status: 'Ativo' | 'Desconectado' | 'Restrito' | 'Não sincronizado';
   initials: string;
 }
 
@@ -87,78 +87,79 @@ const App: React.FC = () => {
   useEffect(() => {
     let isMounted = true;
 
-    const fetchAccounts = async () => {
+const fetchAccounts = async () => {
       try {
 
         const params = new URLSearchParams(window.location.search);
-        const isSuccess = params.get('status') === 'success';
-        // 1. Tentar carregar do Unipile (via backend) para status em tempo real
-        let unipileResponse = await listAccounts();
-
+        const accountId = params.get('account_id');
         
-
         let accountsToDisplay: Account[] = [];
-        
-        if (unipileResponse && unipileResponse.items && unipileResponse.items.length > 0) {
 
-          // Detectar e remover duplicatas
-          const deletedIds = await removeDuplicateAccounts(unipileResponse.items);
-
-
-          // Filtrar contas deletadas localmente
-          if (deletedIds.length > 0) {
-
-            unipileResponse.items = unipileResponse.items.filter((acc: any) => !deletedIds.includes(acc.id));
-
+        // 1. Se veio do flow de autenticação com account_id, sincronizar a nova conta
+        if (accountId && currentUserId && !window.location.search.includes('reconnect')) {
+          try {
+            await syncLinkedInAccount({
+              accountId: accountId,
+              userId: currentUserId
+            });
+            console.log('Conta sincronizada:', accountId);
+          } catch (err) {
+            console.error('Erro ao sincronizar conta:', err);
           }
+          
+          // Limpar URL
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+        
+        // 2. Buscar contas vinculadas ao usuário no Supabase
+        const { data: linkedAccounts, error: linkedError } = await (supabase as any)
+          .from('accounts')
+          .select('*')
+          .eq('user_id', currentUserId!)
+          .order('created_at', { ascending: true });
 
-          // Formatar contas com a resposta atualizada
-          if (unipileResponse && unipileResponse.items && unipileResponse.items.length > 0) {
-            accountsToDisplay = unipileResponse.items.map((acc: any) => {
-              const sourceStatus = acc.sources?.[0]?.status || 'UNKNOWN';
-              return {
+        if (linkedError) {
+          console.error('Erro ao carregar contas do Supabase:', linkedError);
+        }
+
+// 3. Se há contas vinculadas, buscar status atualizado do Unipile para cada uma
+        if (linkedAccounts && linkedAccounts.length > 0) {
+          try {
+            const unipileResponse = await listAccounts();
+            
+            for (const acc of linkedAccounts) {
+              const unipileAcc = unipileResponse?.items?.find((u: any) => u.id === acc.id);
+              const sourceStatus = unipileAcc?.sources?.[0]?.status || 'UNKNOWN';
+              accountsToDisplay.push({
                 id: acc.id,
                 name: acc.name,
-                email: acc.type || 'Sem e-mail',
+                email: acc.email || unipileAcc?.type || 'Sem e-mail',
                 status: sourceStatus === 'OK' ? 'Ativo' : (sourceStatus === 'CONNECTING' ? 'Desconectado' : 'Restrito'),
-                initials: acc.name.substring(0, 2).toUpperCase()
-              };
-            });
-
-          }
-        } else {
-          // 2. Fallback: carregar do Supabase se o Unipile não retornar nada
-          const { data, error } = await (supabase as any)
-            .from('accounts')
-            .select('*')
-            .eq('user_id', currentUserId!)
-            .order('created_at', { ascending: true });
-
-          if (error) {
-            console.error('Erro ao carregar contas do Supabase:', error);
-            return;
-          }
-
-          if (data && data.length > 0) {
-            accountsToDisplay = (data as any[]).map(acc => ({
-              id: acc.id,
-              name: acc.name,
-              email: acc.email,
-              status: acc.status as 'Ativo' | 'Desconectado' | 'Restrito',
-              initials: acc.initials || acc.name.substring(0, 2).toUpperCase()
-            }));
+                initials: acc.initials || acc.name.substring(0, 2).toUpperCase()
+              });
+            }
+          } catch (err) {
+            console.error('Erro ao buscar contas do Unipile:', err);
+            for (const acc of linkedAccounts) {
+              accountsToDisplay.push({
+                id: acc.id,
+                name: acc.name,
+                email: acc.email || 'Sem e-mail',
+                status: 'Desconectado' as const,
+                initials: acc.initials || acc.name.substring(0, 2).toUpperCase()
+              });
+            }
           }
         }
 
 
-        if (isMounted && accountsToDisplay.length > 0) {
-
-          setAccounts(accountsToDisplay);
-          const targetIndex = isSuccess ? accountsToDisplay.length - 1 : 0;
-          setCurrentAccount(accountsToDisplay[targetIndex]);
-
-          if (isSuccess) {
-            window.history.replaceState({}, '', window.location.pathname);
+if (isMounted) {
+          if (accountsToDisplay.length > 0) {
+            setAccounts(accountsToDisplay);
+            setCurrentAccount(accountsToDisplay[0]);
+          } else {
+            setAccounts([]);
+            setCurrentAccount(null);
           }
         }
 
@@ -173,6 +174,32 @@ const App: React.FC = () => {
       isMounted = false;
     };
   }, []);
+
+  // Sincronizar conta quando retornar do Unipile com account_id
+  useEffect(() => {
+    if (!currentUserId || !isAuthenticated) return;
+    
+    const params = new URLSearchParams(window.location.search);
+    const accountId = params.get('account_id');
+    
+    if (accountId && !window.location.search.includes('reconnect')) {
+      const syncAndRefresh = async () => {
+        try {
+          await syncLinkedInAccount({
+            accountId: accountId,
+            userId: currentUserId
+          });
+          console.log('Conta sincronizada:', accountId);
+          window.history.replaceState({}, '', window.location.pathname);
+          // Recarregar contas
+          window.location.reload();
+        } catch (err) {
+          console.error('Erro ao sincronizar conta:', err);
+        }
+      };
+      syncAndRefresh();
+    }
+  }, [currentUserId, isAuthenticated]);
 
   useEffect(() => {
     if (activeTab === Tab.INBOX && currentAccount) {
@@ -310,9 +337,9 @@ const App: React.FC = () => {
                       {currentAccount?.initials || '??'}
                     </div>
                     <div className="flex-1 overflow-hidden">
-                      <p className="text-sm font-semibold text-gray-700 truncate">{currentAccount?.name || 'Carregando...'}</p>
-                      <p className={`text-xs ${currentAccount?.status === 'Ativo' ? 'text-green-600' : 'text-red-500'}`}>
-                        {currentAccount?.status || 'Status desconhecido'}
+                      <p className="text-sm font-semibold text-gray-700 truncate">{currentAccount?.name || 'Nenhuma conta'}</p>
+                      <p className={`text-xs ${currentAccount?.status === 'Ativo' ? 'text-green-600' : currentAccount?.status === 'Não sincronizado' ? 'text-yellow-600' : 'text-red-500'}`}>
+                        {currentAccount?.status || 'Não sincronizado'}
                       </p>
                     </div>
                     {isSwitcherOpen ? <ChevronUp className="w-4 h-4 text-gray-400"/> : <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-gray-600"/>}
@@ -323,40 +350,47 @@ const App: React.FC = () => {
                 {isSwitcherOpen && (
                   <div className="absolute bottom-full left-0 w-full mb-2 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden animate-in fade-in zoom-in duration-200">
                     <div className="p-2 space-y-1">
-                      {accounts.map(account => (
-                        <div key={account.id} className="group relative">
-                          <button
-                            onClick={() => {
-                              setCurrentAccount(account);
-                              setIsSwitcherOpen(false);
-                            }}
-                            className={`w-full flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${currentAccount?.id === account.id ? 'bg-brand-50 text-brand-700' : 'hover:bg-gray-50 text-gray-700'}`}
-                          >
-                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${currentAccount?.id === account.id ? 'bg-brand-200 text-brand-800' : 'bg-gray-100 text-gray-600'}`}>
-                                {account.initials}
-                             </div>
-                             <div className="flex-1 text-left truncate">
-                                <p className="font-medium">{account.name}</p>
-                                <p className={`text-[10px] ${account.status === 'Ativo' ? 'text-green-600' : 'text-red-500'}`}>{account.status}</p>
-                             </div>
-                             {currentAccount?.id === account.id && <Check className="w-3 h-3" />}
-                          </button>
-                          
-                          {account.status !== 'Ativo' && (
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setReconnectAccountId(account.id);
-                                setIsAuthModalOpen(true);
+                      {accounts.length === 0 ? (
+                        <div className="text-center py-4 text-gray-500">
+                          <p className="text-sm">Nenhuma conta vinculada</p>
+                          <p className="text-xs text-gray-400 mt-1">Conecte uma conta para começar</p>
+                        </div>
+                      ) : (
+                        accounts.map(account => (
+                          <div key={account.id} className="group relative">
+                            <button
+                              onClick={() => {
+                                setCurrentAccount(account);
                                 setIsSwitcherOpen(false);
                               }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 px-2 py-1 bg-white border border-red-200 text-red-600 text-[10px] font-bold rounded-md hover:bg-red-50"
+                              className={`w-full flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${currentAccount?.id === account.id ? 'bg-brand-50 text-brand-700' : 'hover:bg-gray-50 text-gray-700'}`}
                             >
-                              Reconectar
+                               <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${currentAccount?.id === account.id ? 'bg-brand-200 text-brand-800' : 'bg-gray-100 text-gray-600'}`}>
+                                  {account.initials}
+                               </div>
+                               <div className="flex-1 text-left truncate">
+                                  <p className="font-medium">{account.name}</p>
+                                  <p className={`text-[10px] ${account.status === 'Ativo' ? 'text-green-600' : account.status === 'Não sincronizado' ? 'text-yellow-600' : 'text-red-500'}`}>{account.status}</p>
+                               </div>
+                               {currentAccount?.id === account.id && <Check className="w-3 h-3" />}
                             </button>
-                          )}
-                        </div>
-                      ))}
+                            
+                            {account.status !== 'Ativo' && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReconnectAccountId(account.id);
+                                  setIsAuthModalOpen(true);
+                                  setIsSwitcherOpen(false);
+                                }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 px-2 py-1 bg-white border border-red-200 text-red-600 text-[10px] font-bold rounded-md hover:bg-red-50"
+                              >
+                                Reconectar
+                              </button>
+                            )}
+                          </div>
+                        ))
+                      )}
                       <div className="h-px bg-gray-100 my-1" />
                       <button 
                         onClick={() => {
@@ -377,7 +411,7 @@ const App: React.FC = () => {
                         }`}>
                           <Plus className="w-3 h-3" />
                         </div>
-                        <span className="font-medium">Adicionar Conta</span>
+                        <span className="font-medium">{accounts.length === 0 ? 'Conectar Conta' : 'Adicionar Conta'}</span>
                         {accounts.length >= 5 && <span className="ml-auto text-xs">Limite: 5/5</span>}
                       </button>
                     </div>
@@ -490,6 +524,7 @@ const App: React.FC = () => {
           }} 
           onSuccess={handleAddAccount}
           reconnectAccountId={reconnectAccountId}
+          userId={currentUserId || undefined}
         />
       </Suspense>
     </div>

@@ -5,6 +5,9 @@ const parseJsonResponse = async (response: Response): Promise<any> => {
   const contentType = response.headers.get('content-type');
 
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Usuário ou senha inválidos');
+    }
     throw new Error(`Erro na requisição: ${response.status} - ${text}`);
   }
 

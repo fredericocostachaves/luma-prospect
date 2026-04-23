@@ -15,12 +15,14 @@ interface LinkedInAuthProps {
   onClose: () => void;
   onSuccess?: (account: any) => void;
   reconnectAccountId?: string;
+  userId?: string;
 }
 
 const LinkedInAuth: React.FC<LinkedInAuthProps> = ({ 
   isOpen, 
   onClose,
-  reconnectAccountId
+  reconnectAccountId,
+  userId
 }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +49,7 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
           failureRedirectUrl: window.location.origin + '/?status=failure'
         });
       } else {
-        response = await getHostedAuthLink();
+        response = await getHostedAuthLink(userId);
       }
 
 
