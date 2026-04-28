@@ -1,23 +1,22 @@
 import supabase from '../utils/supabase'
 
 const EDGE_FUNCTION_URL = import.meta.env.VITE_SUPABASE_EDGE_FUNCTIONS_URL || ''
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY || ''
 
 const getEdgeFunctionUrl = (path: string) => {
   if (EDGE_FUNCTION_URL) {
-    return `${EDGE_FUNCTION_URL}/unipile${path}`
+    return `${EDGE_FUNCTION_URL}${path}`
   }
   return path
 }
 
 const getAuthHeaders = async (): Promise<Record<string, string>> => {
   const { data: { session } } = await supabase.auth.getSession()
-  const headers: Record<string, string> = {
+  const token = session?.access_token || SUPABASE_ANON_KEY
+  return {
     'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
   }
-  if (session?.access_token) {
-    headers['Authorization'] = `Bearer ${session.access_token}`
-  }
-  return headers
 }
 
 const parseJsonResponse = async (response: Response): Promise<any> => {
@@ -56,20 +55,18 @@ export interface HostedAuthResponse {
   url: string
 }
 
-export const getHostedAuthLink = async (name?: string): Promise<HostedAuthResponse> => {
+export const getHostedAuthLink = async (userId?: string, successRedirectUrl?: string): Promise<HostedAuthResponse> => {
   try {
-    const url = getEdgeFunctionUrl('/accounts/link')
-    let fetchUrl: string
-    if (name) {
-      fetchUrl = url.includes('?') ? `${url}&name=${encodeURIComponent(name)}` : `${url}?name=${encodeURIComponent(name)}`
-    } else {
-      fetchUrl = url
-    }
+    const url = getEdgeFunctionUrl('/unipile-accounts-link')
     const headers = await getAuthHeaders()
-    const response = await fetch(fetchUrl, {
+    const body: Record<string, string> = { success_redirect_url: successRedirectUrl || window.location.origin }
+    if (userId) {
+      body.userId = userId
+    }
+    const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({})
+      body: JSON.stringify(body)
     })
 
     return await parseJsonResponse(response)
@@ -82,7 +79,7 @@ export const getHostedAuthLink = async (name?: string): Promise<HostedAuthRespon
 export const listAccounts = async (): Promise<any> => {
   try {
     const headers = await getAuthHeaders()
-    const response = await fetch(getEdgeFunctionUrl('/accounts'), {
+    const response = await fetch(getEdgeFunctionUrl('/unipile-accounts'), {
       method: 'GET',
       headers
     })
@@ -94,31 +91,10 @@ export const listAccounts = async (): Promise<any> => {
   }
 }
 
-export const syncAccounts = async (userId: string): Promise<any> => {
+export const syncLinkedInAccount = async (payload: { accountId: string; userId: string }): Promise<any> => {
   try {
     const headers = await getAuthHeaders()
-    const url = getEdgeFunctionUrl(`/accounts/sync?userId=${encodeURIComponent(userId)}`)
-    const response = await fetch(url, {
-      method: 'POST',
-      headers
-    })
-
-    return await parseJsonResponse(response)
-  } catch (error) {
-    console.error('Erro ao sincronizar contas do Unipile:', error)
-    throw error
-  }
-}
-
-export interface LinkedInSyncRequest {
-  accountId: string
-  userId: string
-}
-
-export const syncLinkedInAccount = async (payload: LinkedInSyncRequest): Promise<any> => {
-  try {
-    const headers = await getAuthHeaders()
-    const response = await fetch(getEdgeFunctionUrl('/accounts/sync/linkedin'), {
+    const response = await fetch(getEdgeFunctionUrl('/unipile-accounts-sync'), {
       method: 'POST',
       headers,
       body: JSON.stringify(payload)
@@ -152,7 +128,7 @@ export interface HostedReconnectResponse {
 export const getReconnectLink = async (payload: HostedReconnectRequest): Promise<HostedReconnectResponse> => {
   try {
     const headers = await getAuthHeaders()
-    const response = await fetch(getEdgeFunctionUrl('/accounts/reconnect'), {
+    const response = await fetch(getEdgeFunctionUrl('/unipile-accounts-reconnect'), {
       method: 'POST',
       headers,
       body: JSON.stringify(payload)
@@ -167,7 +143,7 @@ export const getReconnectLink = async (payload: HostedReconnectRequest): Promise
 
 export const deleteAccount = async (accountId: string): Promise<void> => {
   const headers = await getAuthHeaders()
-  await fetch(getEdgeFunctionUrl(`/accounts/${accountId}`), {
+  await fetch(getEdgeFunctionUrl(`/unipile-accounts-delete?accountId=${encodeURIComponent(accountId)}`), {
     method: 'DELETE',
     headers
   })
@@ -288,7 +264,7 @@ export const listChats = async (params?: ListChatsParams): Promise<UnipileChatsR
       if (params.account_id) queryParams.set('account_id', params.account_id)
     }
 
-    const url = getEdgeFunctionUrl(`/chats${queryParams.toString() ? `?${queryParams}` : ''}`)
+    const url = getEdgeFunctionUrl(`/unipile-chats${queryParams.toString() ? `?${queryParams}` : ''}`)
     const headers = await getAuthHeaders()
     const response = await fetch(url, {
       method: 'GET',
@@ -305,7 +281,7 @@ export const listChats = async (params?: ListChatsParams): Promise<UnipileChatsR
 export const getChat = async (chatId: string): Promise<UnipileChat | null> => {
   try {
     const headers = await getAuthHeaders()
-    const url = getEdgeFunctionUrl(`/chats/${chatId}`)
+    const url = getEdgeFunctionUrl(`/unipile-chats-messages?chatId=${encodeURIComponent(chatId)}`)
     const response = await fetch(url, {
       method: 'GET',
       headers
@@ -334,7 +310,7 @@ export interface UnipileChatAttendee {
 export const getChatAttendee = async (attendeeId: string): Promise<UnipileChatAttendee | null> => {
   try {
     const headers = await getAuthHeaders()
-    const response = await fetch(getEdgeFunctionUrl(`/chat-attendees/${attendeeId}`), {
+    const response = await fetch(getEdgeFunctionUrl(`/unipile-chat-attendees?attendeeId=${encodeURIComponent(attendeeId)}`), {
       method: 'GET',
       headers
     })
@@ -376,7 +352,8 @@ export const listChatMessages = async (params: ListChatMessagesParams): Promise<
     if (params.before) queryParams.set('before', params.before)
     if (params.after) queryParams.set('after', params.after)
     if (params.account_id) queryParams.set('account_id', params.account_id)
-    const url = getEdgeFunctionUrl(`/chats/${encodeURIComponent(params.chat_id)}/messages${queryParams.toString() ? `?${queryParams}` : ''}`)
+
+    const url = getEdgeFunctionUrl(`/unipile-chats-messages-get?chatId=${encodeURIComponent(params.chat_id)}${queryParams.toString() ? `&${queryParams}` : ''}`)
     const headers = await getAuthHeaders()
     const response = await fetch(url, {
       method: 'GET',
@@ -405,17 +382,13 @@ export interface SendMessageResponse {
 export const sendMessageInChat = async (payload: SendMessageRequest): Promise<SendMessageResponse> => {
   try {
     const headers = await getAuthHeaders()
-    const query = payload.account_id ? `?account_id=${encodeURIComponent(payload.account_id)}` : ''
-    const url = getEdgeFunctionUrl(`/chats/${encodeURIComponent(payload.chat_id)}/messages${query}`)
-    const body: any = {
+    const url = getEdgeFunctionUrl('/unipile-chats-messages-send')
+    const body = {
+      chatId: payload.chat_id,
       text: payload.text,
-      sender_id: payload.sender_id
+      senderId: payload.sender_id,
+      accountId: payload.account_id
     }
-    if (payload.account_id) {
-      body.account_id = payload.account_id
-    }
-
-    console.debug('[unipileService] POST', url, 'body=', body)
 
     const response = await fetch(url, {
       method: 'POST',
@@ -443,10 +416,14 @@ export interface StartChatResponse {
 export const startChat = async (payload: StartChatRequest): Promise<StartChatResponse> => {
   try {
     const headers = await getAuthHeaders()
-    const response = await fetch(getEdgeFunctionUrl('/chats'), {
+    const response = await fetch(getEdgeFunctionUrl('/unipile-chats-start'), {
       method: 'POST',
       headers,
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        accountId: payload.account_id,
+        attendeeId: payload.attendee_id,
+        initialMessage: payload.initial_message
+      })
     })
     return await parseJsonResponse(response)
   } catch (error) {
@@ -469,10 +446,14 @@ export interface SendConnectResponse {
 export const sendConnectRequest = async (payload: SendConnectRequest): Promise<SendConnectResponse> => {
   try {
     const headers = await getAuthHeaders()
-    const response = await fetch(getEdgeFunctionUrl('/connect'), {
+    const response = await fetch(getEdgeFunctionUrl('/unipile-connect'), {
       method: 'POST',
       headers,
-      body: JSON.stringify(payload)
+      body: JSON.stringify({
+        accountId: payload.account_id,
+        attendeeId: payload.attendee_id,
+        message: payload.message
+      })
     })
     return await parseJsonResponse(response)
   } catch (error) {

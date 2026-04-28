@@ -49,7 +49,7 @@ const LinkedInAuth: React.FC<LinkedInAuthProps> = ({
           failureRedirectUrl: window.location.origin + '/?status=failure'
         });
       } else {
-        response = await getHostedAuthLink(userId);
+        response = await getHostedAuthLink(userId, window.location.origin);
       }
 
 

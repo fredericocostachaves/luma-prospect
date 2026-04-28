@@ -38,6 +38,9 @@ const App: React.FC = () => {
   const [reconnectAccountId, setReconnectAccountId] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [isLoadingEmail, setIsLoadingEmail] = useState(true);
+  const [syncedAccountIds, setSyncedAccountIds] = useState<Set<string>>(new Set());
   
   // Account State
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -51,11 +54,18 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initAuth = async () => {
+      setIsLoadingEmail(true)
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.user) {
         setIsAuthenticated(true)
         setCurrentUserId(session.user.id)
+        setCurrentUserEmail(session.user.email ?? null)
+      } else {
+        setIsAuthenticated(false)
+        setCurrentUserId(null)
+        setCurrentUserEmail(null)
       }
+      setIsLoadingEmail(false)
     }
     initAuth()
 
@@ -63,10 +73,13 @@ const App: React.FC = () => {
       if (session?.user) {
         setIsAuthenticated(true)
         setCurrentUserId(session.user.id)
+        setCurrentUserEmail(session.user.email ?? null)
       } else {
         setIsAuthenticated(false)
         setCurrentUserId(null)
+        setCurrentUserEmail(null)
       }
+      setIsLoadingEmail(false)
     })
 
     return () => subscription.unsubscribe()
@@ -172,7 +185,7 @@ if (isMounted) {
     const params = new URLSearchParams(window.location.search);
     const accountId = params.get('account_id');
     
-    if (accountId && !window.location.search.includes('reconnect')) {
+    if (accountId && !window.location.search.includes('reconnect') && !syncedAccountIds.has(accountId)) {
       const syncAndRefresh = async () => {
         try {
           await syncLinkedInAccount({
@@ -180,16 +193,15 @@ if (isMounted) {
             userId: currentUserId
           });
           console.log('Conta sincronizada:', accountId);
+          setSyncedAccountIds(prev => new Set(prev).add(accountId));
           window.history.replaceState({}, '', window.location.pathname);
-          // Recarregar contas
-          window.location.reload();
         } catch (err) {
           console.error('Erro ao sincronizar conta:', err);
         }
       };
       syncAndRefresh();
     }
-  }, [currentUserId, isAuthenticated]);
+  }, [currentUserId, isAuthenticated, syncedAccountIds]);
 
   useEffect(() => {
     if (activeTab === Tab.INBOX && currentAccount) {
@@ -426,6 +438,7 @@ if (isMounted) {
                 await supabase.auth.signOut()
                 setIsAuthenticated(false)
                 setCurrentUserId(null)
+                setCurrentUserEmail(null)
               }}
               className="flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl"
             >
@@ -470,7 +483,7 @@ if (isMounted) {
               {/* Context indicator */}
               <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-medium rounded-full border border-blue-100 self-start sm:self-auto">
                 <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
-                Visualizando: {currentAccount?.name || '...'}
+                {isLoadingEmail ? 'Carregando...' : `Visualizando: ${currentUserEmail || currentAccount?.name || '...'}`}
               </div>
             </header>
 
