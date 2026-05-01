@@ -93,11 +93,14 @@ const fetchAccounts = async () => {
 
         const params = new URLSearchParams(window.location.search);
         const accountId = params.get('account_id');
+        const isNewConnection = params.get('flow') === 'new_connection';
+        const isReconnectFlow = params.has('reconnect');
         
         let accountsToDisplay: Account[] = [];
 
         // 1. Se veio do flow de autenticação com account_id, sincronizar a nova conta
-        if (accountId && currentUserId && !window.location.search.includes('reconnect')) {
+        // Skip sync for reconnect or new connection flows
+        if (accountId && currentUserId && !isReconnectFlow && !isNewConnection) {
           try {
             await syncLinkedInAccount({
               accountId: accountId,
@@ -107,9 +110,15 @@ const fetchAccounts = async () => {
           } catch (err) {
             console.error('Erro ao sincronizar conta:', err);
           }
-          
-          // Limpar URL
-          window.history.replaceState({}, '', window.location.pathname);
+        }
+
+        // Limpar URL (remove account_id, flow, reconnect params)
+        if (accountId || isNewConnection || isReconnectFlow) {
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('account_id');
+          cleanUrl.searchParams.delete('flow');
+          cleanUrl.searchParams.delete('reconnect');
+          window.history.replaceState({}, '', cleanUrl.toString());
         }
         
         // 2. Buscar contas vinculadas ao usuário no Supabase
@@ -178,14 +187,15 @@ if (isMounted) {
     };
   }, []);
 
-  // Sincronizar conta quando retornar do Unipile com account_id
+// Sincronizar conta quando retornar do Unipile com account_id
   useEffect(() => {
     if (!currentUserId || !isAuthenticated) return;
     
     const params = new URLSearchParams(window.location.search);
     const accountId = params.get('account_id');
+    const isNewConnection = params.get('flow') === 'new_connection';
     
-    if (accountId && !window.location.search.includes('reconnect') && !syncedAccountIds.has(accountId)) {
+    if (accountId && !params.has('reconnect') && !syncedAccountIds.has(accountId) && !isNewConnection) {
       const syncAndRefresh = async () => {
         try {
           await syncLinkedInAccount({
@@ -194,12 +204,23 @@ if (isMounted) {
           });
           console.log('Conta sincronizada:', accountId);
           setSyncedAccountIds(prev => new Set(prev).add(accountId));
-          window.history.replaceState({}, '', window.location.pathname);
+          // Clean URL
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete('account_id');
+          cleanUrl.searchParams.delete('flow');
+          cleanUrl.searchParams.delete('reconnect');
+          window.history.replaceState({}, '', cleanUrl.toString());
         } catch (err) {
           console.error('Erro ao sincronizar conta:', err);
         }
       };
       syncAndRefresh();
+    } else if ((accountId || isNewConnection) && !params.has('reconnect')) {
+      // Clean URL if new connection flow or has accountId but no sync needed
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('account_id');
+      cleanUrl.searchParams.delete('flow');
+      window.history.replaceState({}, '', cleanUrl.toString());
     }
   }, [currentUserId, isAuthenticated, syncedAccountIds]);
 
@@ -403,11 +424,14 @@ if (isMounted) {
                       )}
                       <div className="h-px bg-gray-100 my-1" />
                       <button 
-                        onClick={() => {
-                          setReconnectAccountId(undefined);
-                          setIsAuthModalOpen(true);
-                          setIsSwitcherOpen(false);
-                        }}
+onClick={() => {
+  setReconnectAccountId(undefined);
+  const url = new URL(window.location.href);
+  url.searchParams.set('flow', 'new_connection');
+  window.history.replaceState({}, '', url.toString());
+  setIsAuthModalOpen(true);
+  setIsSwitcherOpen(false);
+}}
                         disabled={accounts.length >= 5}
                         className={`w-full flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${
                           accounts.length >= 5
@@ -528,10 +552,15 @@ if (isMounted) {
       <Suspense fallback={null}>
         <LinkedInAuth 
           isOpen={isAuthModalOpen} 
-          onClose={() => {
-            setIsAuthModalOpen(false);
-            setReconnectAccountId(undefined);
-          }} 
+onClose={() => {
+  setIsAuthModalOpen(false);
+  setReconnectAccountId(undefined);
+  const url = new URL(window.location.href);
+  if (url.searchParams.has('flow')) {
+    url.searchParams.delete('flow');
+    window.history.replaceState({}, '', url.toString());
+  }
+}}
           onSuccess={handleAddAccount}
           reconnectAccountId={reconnectAccountId}
           userId={currentUserId || undefined}

@@ -15,6 +15,9 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
+
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -22,9 +25,6 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
-
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
 
     const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
       headers: {
@@ -62,7 +62,14 @@ Deno.serve(async (req) => {
     }
 
     const fullUrl = `${UNIPILE_API_URL}/api/v1/hosted/accounts/link`
-    const webhookUrl = `${supabaseUrl}/functions/v1/unipile-webhook?apikey=${supabaseAnonKey}`
+    const edgeFunctionsUrl = Deno.env.get('SUPABASE_EDGE_FUNCTIONS_URL') || Deno.env.get('EDGE_FUNCTIONS_URL') || Deno.env.get('VITE_SUPABASE_EDGE_FUNCTIONS_URL') || `${supabaseUrl}/functions/v1`
+    const webhookSecret = Deno.env.get('UNIPILE_WEBHOOK_SECRET')
+    let webhookUrl = `${edgeFunctionsUrl}/unipile-webhook`
+    if (webhookSecret) {
+      const url = new URL(webhookUrl)
+      url.searchParams.set('secret', webhookSecret)
+      webhookUrl = url.toString()
+    }
 
     const expiresOn = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
