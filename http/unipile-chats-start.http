@@ -1,0 +1,9 @@
+### Start new chat
+POST https://jpfxxoflclkpqsibvdil.supabase.co/functions/v1/unipile-chats-start
+Content-Type: application/json
+Authorization: Bearer {{supabase_token}}
+
+{
+  "accountId": "HZ5ydcdSTAiVWl8UrV11VA",
+  "attendeeId": "some-attendee-id"
+}

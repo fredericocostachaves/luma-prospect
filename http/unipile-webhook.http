@@ -1,0 +1,50 @@
+### Webhook: Account Creation Success
+POST https://jpfxxoflclkpqsibvdil.supabase.co/functions/v1/unipile-webhook
+Content-Type: application/json
+x-unipile-webhook-secret: {{webhook_secret}}
+
+{
+  "status": "CREATION_SUCCESS",
+  "account_id": "HZ5ydcdSTAiVWl8UrV11VA",
+  "name": "badcea38-fbb2-45cf-9314-88771b63f42d"
+}
+
+### Webhook: Account Reconnected
+POST https://jpfxxoflclkpqsibvdil.supabase.co/functions/v1/unipile-webhook
+Content-Type: application/json
+x-unipile-webhook-secret: {{webhook_secret}}
+
+{
+  "status": "RECONNECTED",
+  "account_id": "HZ5ydcdSTAiVWl8UrV11VA",
+  "name": "badcea38-fbb2-45cf-9314-88771b63f42d"
+}
+
+### Check existing account by unipile_account_id
+GET https://jpfxxoflclkpqsibvdil.supabase.co/rest/v1/accounts?or=(unipile_account_id.eq.{{account_id}},proxy_settings->>external_id.eq.{{account_id}})
+apikey: {{supabase_key}}
+
+### Create account in Supabase (webhook)
+POST https://jpfxxoflclkpqsibvdil.supabase.co/rest/v1/accounts
+Content-Type: application/json
+Prefer: return=representation
+apikey: {{supabase_key}}
+
+{
+  "id": "{{account_id}}",
+  "user_id": "{{user_id}}",
+  "name": "LinkedIn",
+  "status": "Ativo",
+  "initials": "LI",
+  "unipile_account_id": "{{account_id}}"
+}
+
+### Update account in Supabase (webhook)
+PATCH https://jpfxxoflclkpqsibvdil.supabase.co/rest/v1/accounts?id=eq.{{existing_id}}
+Content-Type: application/json
+apikey: {{supabase_key}}
+
+{
+  "status": "Ativo",
+  "unipile_account_id": "{{account_id}}"
+}

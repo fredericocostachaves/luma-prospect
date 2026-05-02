@@ -107,6 +107,40 @@ export const syncLinkedInAccount = async (payload: { accountId: string; userId: 
   }
 }
 
+export interface UnipileAccount {
+  object: string
+  id: string
+  name: string
+  type: string
+  sources: Array<{
+    type: string
+  status: string
+    id: string
+  }>
+  created_at: string
+  updated_at: string
+}
+
+export const getAccountById = async (accountId: string): Promise<UnipileAccount | null> => {
+  try {
+    const headers = await getAuthHeaders()
+    const response = await fetch(getEdgeFunctionUrl(`/unipile-accounts/${accountId}`), {
+      method: 'GET',
+      headers
+    })
+    
+    if (!response.ok) {
+      console.error('Erro ao buscar conta no Unipile:', response.status)
+      return null
+    }
+    
+    return await response.json()
+  } catch (error) {
+    console.error('Erro ao buscar conta por ID:', error)
+    return null
+  }
+}
+
 export const redirectToHostedAuth = (url: string) => {
   window.location.assign(url)
 }

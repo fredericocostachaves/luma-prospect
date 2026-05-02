@@ -1,0 +1,8 @@
+### Delete account
+DELETE https://jpfxxoflclkpqsibvdil.supabase.co/functions/v1/unipile-accounts-delete
+Content-Type: application/json
+Authorization: Bearer {{supabase_token}}
+
+{
+  "accountId": "HZ5ydcdSTAiVWl8UrV11VA"
+}

@@ -12,30 +12,30 @@ export type Database = {
       accounts: {
         Row: {
           id: string
+          unipile_account_id: string | null
           user_id: string
           name: string
-          email: string
-          status: 'Ativo' | 'Desconectado' | 'Restrito'
+          status: 'CREATION_SUCCESS' | 'RECONNECTED'
           initials: string | null
           proxy_settings: Json | null
           created_at: string
         }
         Insert: {
           id?: string
+          unipile_account_id?: string | null
           user_id: string
           name: string
-          email: string
-          status?: 'Ativo' | 'Desconectado' | 'Restrito'
+          status?: 'CREATION_SUCCESS' | 'RECONNECTED'
           initials?: string | null
           proxy_settings?: Json | null
           created_at?: string
         }
         Update: {
           id?: string
+          unipile_account_id?: string | null
           user_id?: string
           name?: string
-          email?: string
-          status?: 'Ativo' | 'Desconectado' | 'Restrito'
+          status?: 'CREATION_SUCCESS' | 'RECONNECTED'
           initials?: string | null
           proxy_settings?: Json | null
           created_at?: string

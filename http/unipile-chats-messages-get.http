@@ -1,0 +1,10 @@
+### Get chat messages
+POST https://jpfxxoflclkpqsibvdil.supabase.co/functions/v1/unipile-chats-messages-get
+Content-Type: application/json
+Authorization: Bearer {{supabase_token}}
+
+{
+  "accountId": "HZ5ydcdSTAiVWl8UrV11VA",
+  "chatId": "some-chat-id",
+  "limit": 50
+}

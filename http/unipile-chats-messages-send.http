@@ -1,0 +1,10 @@
+### Send message
+POST https://jpfxxoflclkpqsibvdil.supabase.co/functions/v1/unipile-chats-messages-send
+Content-Type: application/json
+Authorization: Bearer {{supabase_token}}
+
+{
+  "accountId": "HZ5ydcdSTAiVWl8UrV11VA",
+  "chatId": "some-chat-id",
+  "text": "Olá, tudo bem?"
+}

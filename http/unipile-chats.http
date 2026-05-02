@@ -1,0 +1,9 @@
+### List chats
+POST https://jpfxxoflclkpqsibvdil.supabase.co/functions/v1/unipile-chats
+Content-Type: application/json
+Authorization: Bearer {{supabase_token}}
+
+{
+  "account_id": "HZ5ydcdSTAiVWl8UrV11VA",
+  "limit": 50
+}

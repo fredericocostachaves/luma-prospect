@@ -1,0 +1,38 @@
+### Sync LinkedIn Account
+@supabase_token =eyJhbGciOiJFUzI1NiIsImtpZCI6ImQ2NGVkNTJjLTE1MmMtNDYwZC04NTlhLWI1MzYyY2E5MzU0NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2pwZnh4b2ZsY2xrcHFzaWJ2ZGlsLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJiYWRjZWEzOC1mYmIyLTQ1Y2YtOTMxNC04ODc3MWI2M2Y0MmQiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzc3MTI1MjA3LCJpYXQiOjE3NzcxMjE2MDcsImVtYWlsIjoiZmNvc3RhY2hhdmVzQGdtYWlsLmNvbSIsInBob25lIjoiIiwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiZW1haWwiLCJwcm92aWRlcnMiOlsiZW1haWwiXX0sInVzZXJfbWV0YWRhdGEiOnsiZW1haWwiOiJmY29zdGFjaGF2ZXNAZ21haWwuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsInBob25lX3ZlcmlmaWVkIjpmYWxzZSwic3ViIjoiYmFkY2VhMzgtZmJiMi00NWNmLTkzMTQtODg3NzFiNjNmNDJkIn0sInJvbGUiOiJhdXRoZW50aWNhdGVkIiwiYWFsIjoiYWFsMSIsImFtciI6W3sibWV0aG9kIjoicGFzc3dvcmQiLCJ0aW1lc3RhbXAiOjE3NzcxMTUxNjF9XSwic2Vzc2lvbl9pZCI6Ijc2NTVjMDc5LTIyMDgtNGNmOC04Mjg5LTQzODk3NzgxNDFkZiIsImlzX2Fub255bW91cyI6ZmFsc2V9.klL4lZR2KfbfjYCHr9bUTIuVw9EouObPhrQgVM3MYwSB1e2dVOE_SRfDH2rZ48XzmCeD5R0ra-nk5yPWhFSeBw
+POST https://jpfxxoflclkpqsibvdil.supabase.co/functions/v1/unipile-accounts-sync
+Content-Type: application/json
+Authorization: Bearer {{supabase_token}}
+
+{
+  "accountId": "HZ5ydcdSTAiVWl8UrV11VA",
+  "userId": "badcea38-fbb2-45cf-9314-88771b63f42d"
+}
+
+### Check existing account in Supabase
+GET https://jpfxxoflclkpqsibvdil.supabase.co/rest/v1/accounts?id=eq.{{accountId}}
+Authorization: Bearer {{supabase_service_key}}
+
+### Create new account in Supabase
+POST https://jpfxxoflclkpqsibvdil.supabase.co/rest/v1/accounts
+Content-Type: application/json
+Authorization: Bearer {{supabase_service_key}}
+Prefer: return=representation
+
+{
+  "id": "{{accountId}}",
+  "unipile_account_id": "{{accountId}}",
+  "user_id": "{{userId}}",
+  "name": "LinkedIn",
+  "status": "Ativo",
+  "initials": "LI"
+}
+
+### Update existing account status
+PATCH https://jpfxxoflclkpqsibvdil.supabase.co/rest/v1/accounts?id=eq.{{accountId}}
+Content-Type: application/json
+Authorization: Bearer {{supabase_service_key}}
+
+{
+  "status": "Ativo"
+}

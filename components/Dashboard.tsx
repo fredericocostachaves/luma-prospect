@@ -48,8 +48,7 @@ const StatCard = ({ title, value, sub, icon: Icon, color }: any) => (
 interface AccountFromApp {
   id: string;
   name: string;
-  email: string;
-  status: 'Ativo' | 'Desconectado' | 'Restrito';
+  status: 'CREATION_SUCCESS' | 'RECONNECTED';
   initials: string;
 }
 
@@ -64,9 +63,8 @@ const Dashboard: React.FC<DashboardProps> = ({ accounts = [] }) => {
   const displayAccounts: AccountPerf[] = accounts.map(acc => {
     // Map status from App strings to Dashboard status keys
     const statusMap: Record<string, 'active' | 'restricted' | 'disconnected'> = {
-      'Ativo': 'active',
-      'Restrito': 'restricted',
-      'Desconectado': 'disconnected'
+      'CREATION_SUCCESS': 'active',
+      'RECONNECTED': 'disconnected'
     };
 
     // Default performance data for accounts

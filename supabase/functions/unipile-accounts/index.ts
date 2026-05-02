@@ -14,7 +14,7 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 204, headers: corsHeaders })
   }
 
-  try {
+    try {
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -23,14 +23,24 @@ Deno.serve(async (req) => {
       })
     }
 
-    const url = `${UNIPILE_API_URL}/api/v1/accounts`
+    // Extract account ID from URL path if present
+    const url = new URL(req.url)
+    const pathParts = url.pathname.split('/')
+    const accountsIndex = pathParts.indexOf('unipile-accounts')
+    const accountId = accountsIndex >= 0 && pathParts.length > accountsIndex + 1 
+      ? pathParts[accountsIndex + 1] 
+      : null
 
+    const unipileUrl = accountId 
+      ? `${UNIPILE_API_URL}/api/v1/accounts/${accountId}`
+      : `${UNIPILE_API_URL}/api/v1/accounts`
+    
     const headers = {
       'X-API-KEY': UNIPILE_API_KEY,
       'accept': 'application/json',
     }
 
-    const response = await fetch(url, {
+    const response = await fetch(unipileUrl, {
       method: 'GET',
       headers,
     })

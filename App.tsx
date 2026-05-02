@@ -2,7 +2,7 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, ChevronDown, ChevronUp, Plus, Check, Columns } from 'lucide-react';
 import { supabase } from './utils/supabase';
 import { Database } from './database.types';
-import { listAccounts, listChats, UnipileChatsResponse, syncLinkedInAccount } from './services/unipileService';
+import { listAccounts, listChats, UnipileChatsResponse, syncLinkedInAccount, getAccountById } from './services/unipileService';
 import Login from './components/Login';
 import ResetPassword from './components/ResetPassword';
 
@@ -24,12 +24,11 @@ enum Tab {
 
 interface Account {
   id: string;
+  unipile_account_id?: string | null;
   name: string;
-  email: string;
-  status: 'Ativo' | 'Desconectado' | 'Restrito';
+  status: 'CREATION_SUCCESS' | 'RECONNECTED';
   initials: string;
 }
-
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>(Tab.DASHBOARD);
@@ -41,11 +40,87 @@ const App: React.FC = () => {
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
   const [isLoadingEmail, setIsLoadingEmail] = useState(true);
   const [syncedAccountIds, setSyncedAccountIds] = useState<Set<string>>(new Set());
+  const [accountsRefreshKey, setAccountsRefreshKey] = useState(0);
   
   // Account State
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
   const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
+
+  // Função para buscar contas
+  const fetchAccounts = async (userId: string) => {
+    try {
+      console.log('fetchAccounts: currentUserId =', userId);
+      
+      const { data: linkedAccounts, error: linkedError } = await (supabase as any)
+        .from('accounts')
+        .select('id, unipile_account_id, name, status, initials')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true });
+
+      if (linkedError) {
+        console.error('Erro ao carregar contas do Supabase:', linkedError);
+      }
+
+      console.log('Contas vinculadas ao userId', userId, ':', linkedAccounts);
+
+      if (linkedAccounts && linkedAccounts.length > 0) {
+        const accountsToDisplay: Account[] = [];
+        
+        for (const acc of linkedAccounts) {
+          let accountName = acc.name;
+          let accountInitials = acc.initials;
+          
+          // Se não tem name, buscar no Unipile
+          if ((!accountName || accountName.trim() === '') && acc.unipile_account_id) {
+            const unipileData = await getAccountById(acc.unipile_account_id);
+            if (unipileData && unipileData.name) {
+              accountName = unipileData.name;
+              accountInitials = (accountName.substring(0, 2) || 'LI').toUpperCase();
+              
+              // Atualizar no banco
+              const { error: updateError } = await (supabase as any)
+                .from('accounts')
+                .update({ 
+                  name: accountName, 
+                  initials: accountInitials,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', acc.id);
+                
+              if (updateError) {
+                console.error('Erro ao atualizar conta:', updateError);
+              }
+            }
+          }
+          
+          // Gerar initials se não tiver (primeira letra do primeiro e último nome)
+          if (!accountInitials && accountName) {
+            const nameParts = accountName.trim().split(/\s+/);
+            const firstInitial = nameParts[0]?.[0] || '';
+            const lastInitial = nameParts.length > 1 ? nameParts[nameParts.length - 1][0] || '' : '';
+            accountInitials = (firstInitial + (lastInitial || firstInitial)).toUpperCase() || 'LI';
+          }
+          
+          accountsToDisplay.push({
+            id: acc.id,
+            unipile_account_id: acc.unipile_account_id || '',
+            name: accountName || '',
+            status: acc.status || 'CREATION_SUCCESS',
+            initials: accountInitials || 'LI'
+          });
+        }
+        
+        setAccounts(accountsToDisplay);
+        setCurrentAccount(accountsToDisplay[0]);
+      } else {
+        setAccounts([]);
+        setCurrentAccount(null);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar contas:', err);
+    }
+  };
 
   // Inbox State
   const [chats, setChats] = useState<UnipileChatsResponse | null>(null);
@@ -54,140 +129,43 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initAuth = async () => {
-      setIsLoadingEmail(true)
-      const { data: { session } } = await supabase.auth.getSession()
+      setIsLoadingEmail(true);
+      const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        setIsAuthenticated(true)
-        setCurrentUserId(session.user.id)
-        setCurrentUserEmail(session.user.email ?? null)
+        setIsAuthenticated(true);
+        setCurrentUserId(session.user.id);
+        setCurrentUserEmail(session.user.email ?? null);
       } else {
-        setIsAuthenticated(false)
-        setCurrentUserId(null)
-        setCurrentUserEmail(null)
+        setIsAuthenticated(false);
+        setCurrentUserId(null);
+        setCurrentUserEmail(null);
       }
-      setIsLoadingEmail(false)
-    }
-    initAuth()
+      setIsLoadingEmail(false);
+    };
+    initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        setIsAuthenticated(true)
-        setCurrentUserId(session.user.id)
-        setCurrentUserEmail(session.user.email ?? null)
+        setIsAuthenticated(true);
+        setCurrentUserId(session.user.id);
+        setCurrentUserEmail(session.user.email ?? null);
       } else {
-        setIsAuthenticated(false)
-        setCurrentUserId(null)
-        setCurrentUserEmail(null)
+        setIsAuthenticated(false);
+        setCurrentUserId(null);
+        setCurrentUserEmail(null);
       }
-      setIsLoadingEmail(false)
-    })
+      setIsLoadingEmail(false);
+    });
 
-    return () => subscription.unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    let isMounted = true;
-
-const fetchAccounts = async () => {
-      try {
-
-        const params = new URLSearchParams(window.location.search);
-        const accountId = params.get('account_id');
-        const isNewConnection = params.get('flow') === 'new_connection';
-        const isReconnectFlow = params.has('reconnect');
-        
-        let accountsToDisplay: Account[] = [];
-
-        // 1. Se veio do flow de autenticação com account_id, sincronizar a nova conta
-        // Skip sync for reconnect or new connection flows
-        if (accountId && currentUserId && !isReconnectFlow && !isNewConnection) {
-          try {
-            await syncLinkedInAccount({
-              accountId: accountId,
-              userId: currentUserId
-            });
-            console.log('Conta sincronizada:', accountId);
-          } catch (err) {
-            console.error('Erro ao sincronizar conta:', err);
-          }
-        }
-
-        // Limpar URL (remove account_id, flow, reconnect params)
-        if (accountId || isNewConnection || isReconnectFlow) {
-          const cleanUrl = new URL(window.location.href);
-          cleanUrl.searchParams.delete('account_id');
-          cleanUrl.searchParams.delete('flow');
-          cleanUrl.searchParams.delete('reconnect');
-          window.history.replaceState({}, '', cleanUrl.toString());
-        }
-        
-        // 2. Buscar contas vinculadas ao usuário no Supabase
-        if (!currentUserId) return;
-        
-        const { data: linkedAccounts, error: linkedError } = await (supabase as any)
-          .from('accounts')
-          .select('*')
-          .eq('user_id', currentUserId)
-          .order('created_at', { ascending: true });
-
-        if (linkedError) {
-          console.error('Erro ao carregar contas do Supabase:', linkedError);
-        }
-
-// 3. Se há contas vinculadas, buscar status atualizado do Unipile para cada uma
-        if (linkedAccounts && linkedAccounts.length > 0) {
-          try {
-            const unipileResponse = await listAccounts();
-            
-            for (const acc of linkedAccounts) {
-              const unipileAcc = unipileResponse?.items?.find((u: any) => u.id === acc.id);
-              const sourceStatus = unipileAcc?.sources?.[0]?.status || 'UNKNOWN';
-              accountsToDisplay.push({
-                id: acc.id,
-                name: acc.name,
-                email: acc.email || unipileAcc?.type || 'Sem e-mail',
-                status: sourceStatus === 'OK' ? 'Ativo' : (sourceStatus === 'CONNECTING' ? 'Desconectado' : 'Restrito'),
-                initials: acc.initials || acc.name.substring(0, 2).toUpperCase()
-              });
-            }
-          } catch (err) {
-            console.error('Erro ao buscar contas do Unipile:', err);
-            for (const acc of linkedAccounts) {
-              accountsToDisplay.push({
-                id: acc.id,
-                name: acc.name,
-                email: acc.email || 'Sem e-mail',
-                status: 'Desconectado' as const,
-                initials: acc.initials || acc.name.substring(0, 2).toUpperCase()
-              });
-            }
-          }
-        }
-
-
-if (isMounted) {
-          if (accountsToDisplay.length > 0) {
-            setAccounts(accountsToDisplay);
-            setCurrentAccount(accountsToDisplay[0]);
-          } else {
-            setAccounts([]);
-            setCurrentAccount(null);
-          }
-        }
-
-      } catch (err) {
-        console.error('Erro ao carregar contas:', err);
-      }
-    };
-
-    void fetchAccounts();
-
-    return () => {
-      isMounted = false;
-    };
+    return () => subscription.unsubscribe();
   }, []);
 
-// Sincronizar conta quando retornar do Unipile com account_id
+  useEffect(() => {
+    if (!currentUserId) return;
+    fetchAccounts(currentUserId);
+  }, [currentUserId, accountsRefreshKey]);
+
+  // Sincronizar conta quando retornar do Unipile com account_id
   useEffect(() => {
     if (!currentUserId || !isAuthenticated) return;
     
@@ -204,6 +182,7 @@ if (isMounted) {
           });
           console.log('Conta sincronizada:', accountId);
           setSyncedAccountIds(prev => new Set(prev).add(accountId));
+          setAccountsRefreshKey(prev => prev + 1);
           // Clean URL
           const cleanUrl = new URL(window.location.href);
           cleanUrl.searchParams.delete('account_id');
@@ -246,10 +225,15 @@ if (isMounted) {
     
     const formattedAccount: Account = {
       id: newAccount.id,
+      unipile_account_id: newAccount.unipile_account_id || newAccount.id,
       name: newAccount.name,
-      email: newAccount.email,
-      status: newAccount.status as 'Ativo' | 'Desconectado' | 'Restrito',
-      initials: newAccount.initials || newAccount.name.substring(0, 2).toUpperCase()
+      status: newAccount.status as 'CREATION_SUCCESS' | 'RECONNECTED',
+      initials: newAccount.initials || (() => {
+        const nameParts = (newAccount.name || '').trim().split(/\s+/);
+        const firstInitial = nameParts[0]?.[0] || '';
+        const lastInitial = nameParts.length > 1 ? nameParts[nameParts.length - 1][0] || '' : '';
+        return (firstInitial + (lastInitial || firstInitial)).toUpperCase() || 'LI';
+      })()
     };
 
     // Verificar se a conta já existe
@@ -260,22 +244,20 @@ if (isMounted) {
       return;
     }
 
-    // Verificar limite de 5 contas
-    if (accounts.length >= 5) {
-      console.error('Limite de 5 contas atingido');
-      alert('Você atingiu o limite máximo de 5 contas. Remova uma conta para adicionar outra.');
+    // Verificar se usuário já tem uma conta vinculada
+    if (accounts.length >= 1) {
+      console.error('Usuário já possui uma conta vinculada');
+      alert('Você já possui uma conta vinculada. Remova-a primeiro para adicionar outra.');
       return;
     }
 
     // Salvar conta no banco de dados (Supabase)
     try {
-
-      
       type AccountInsert = Database['public']['Tables']['accounts']['Insert'];
       const accountToInsert: AccountInsert = {
         id: formattedAccount.id,
+        unipile_account_id: formattedAccount.unipile_account_id,
         name: formattedAccount.name,
-        email: formattedAccount.email,
         status: formattedAccount.status,
         initials: formattedAccount.initials,
         user_id: currentUserId,
@@ -290,8 +272,6 @@ if (isMounted) {
         console.error('Erro ao salvar conta no banco:', error);
         alert('Erro ao salvar a conta. Tente novamente.');
         return;
-      } else {
-
       }
     } catch (err) {
       console.error('Erro inesperado ao salvar conta:', err);
@@ -358,100 +338,53 @@ if (isMounted) {
           <div className="mt-auto pt-4 border-t border-gray-100 space-y-2">
             
             {/* Account Selector */}
-            <div className="relative">
-                <button 
-                  onClick={() => setIsSwitcherOpen(!isSwitcherOpen)}
-                  className="w-full p-3 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors text-left group"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xs">
-                      {currentAccount?.initials || '??'}
-                    </div>
-                    <div className="flex-1 overflow-hidden">
-                      <p className="text-sm font-semibold text-gray-700 truncate">{currentAccount?.name || 'Nenhuma conta'}</p>
-                      <p className={`text-xs ${currentAccount?.status === 'Ativo' ? 'text-green-600' : currentAccount?.status === 'Desconectado' ? 'text-yellow-600' : 'text-red-500'}`}>
-                        {currentAccount?.status || 'Não sincronizado'}
-                      </p>
-                    </div>
-                    {isSwitcherOpen ? <ChevronUp className="w-4 h-4 text-gray-400"/> : <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-gray-600"/>}
+            {accounts.length === 0 ? (
+              // No account: show simple connect button
+              <button 
+                onClick={() => {
+                  setReconnectAccountId(undefined);
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('flow', 'new_connection');
+                  window.history.replaceState({}, '', url.toString());
+                  setIsAuthModalOpen(true);
+                }}
+                className="w-full p-3 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors text-left flex items-center gap-3"
+              >
+                <div className="w-8 h-8 border border-dashed border-gray-300 rounded-full flex items-center justify-center">
+                  <Plus className="w-4 h-4 text-gray-400" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-700">Conectar Conta</p>
+                  <p className="text-xs text-gray-400">Clique para vincular seu LinkedIn</p>
+                </div>
+              </button>
+            ) : (
+              // Has account
+              <div className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 text-left">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xs">
+                    {currentAccount?.initials || 'LI'}
                   </div>
-                </button>
-
-                {/* Dropdown Menu */}
-                {isSwitcherOpen && (
-                  <div className="absolute bottom-full left-0 w-full mb-2 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden animate-in fade-in zoom-in duration-200">
-                    <div className="p-2 space-y-1">
-                      {accounts.length === 0 ? (
-                        <div className="text-center py-4 text-gray-500">
-                          <p className="text-sm">Nenhuma conta vinculada</p>
-                          <p className="text-xs text-gray-400 mt-1">Conecte uma conta para começar</p>
-                        </div>
-                      ) : (
-                        accounts.map(account => (
-                          <div key={account.id} className="group relative">
-                            <button
-                              onClick={() => {
-                                setCurrentAccount(account);
-                                setIsSwitcherOpen(false);
-                              }}
-                              className={`w-full flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${currentAccount?.id === account.id ? 'bg-brand-50 text-brand-700' : 'hover:bg-gray-50 text-gray-700'}`}
-                            >
-                               <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${currentAccount?.id === account.id ? 'bg-brand-200 text-brand-800' : 'bg-gray-100 text-gray-600'}`}>
-                                  {account.initials}
-                               </div>
-                               <div className="flex-1 text-left truncate">
-                                  <p className="font-medium">{account.name}</p>
-                                  <p className={`text-[10px] ${account.status === 'Ativo' ? 'text-green-600' : account.status === 'Desconectado' ? 'text-yellow-600' : 'text-red-500'}`}>{account.status}</p>
-                               </div>
-                               {currentAccount?.id === account.id && <Check className="w-3 h-3" />}
-                            </button>
-                            
-                            {account.status !== 'Ativo' && (
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setReconnectAccountId(account.id);
-                                  setIsAuthModalOpen(true);
-                                  setIsSwitcherOpen(false);
-                                }}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-1 px-2 py-1 bg-white border border-red-200 text-red-600 text-[10px] font-bold rounded-md hover:bg-red-50"
-                              >
-                                Reconectar
-                              </button>
-                            )}
-                          </div>
-                        ))
-                      )}
-                      <div className="h-px bg-gray-100 my-1" />
-                      <button 
-onClick={() => {
-  setReconnectAccountId(undefined);
-  const url = new URL(window.location.href);
-  url.searchParams.set('flow', 'new_connection');
-  window.history.replaceState({}, '', url.toString());
-  setIsAuthModalOpen(true);
-  setIsSwitcherOpen(false);
-}}
-                        disabled={accounts.length >= 5}
-                        className={`w-full flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${
-                          accounts.length >= 5
-                            ? 'text-gray-300 cursor-not-allowed'
-                            : 'text-gray-500 hover:bg-gray-50 hover:text-brand-600'
-                        }`}
-                        title={accounts.length >= 5 ? 'Limite de 5 contas atingido' : ''}
-                      >
-                        <div className={`w-6 h-6 border border-dashed rounded-full flex items-center justify-center ${
-                          accounts.length >= 5 ? 'border-gray-200' : 'border-gray-300'
-                        }`}>
-                          <Plus className="w-3 h-3" />
-                        </div>
-                        <span className="font-medium">{accounts.length === 0 ? 'Conectar Conta' : 'Adicionar Conta'}</span>
-                        {accounts.length >= 5 && <span className="ml-auto text-xs">Limite: 5/5</span>}
-                      </button>
-                    </div>
+                  <div className="flex-1 overflow-hidden">
+                    <p className="text-sm font-semibold text-gray-700 truncate">{currentAccount?.name || currentAccount?.unipile_account_id || 'Nenhuma conta'}</p>
+                     <p className={`text-xs ${currentAccount?.status === 'CREATION_SUCCESS' ? 'text-green-600' : currentAccount?.status === 'RECONNECTED' ? 'text-yellow-600' : 'text-gray-500'}`}>
+                       {currentAccount?.status === 'CREATION_SUCCESS' ? 'Ativo' : currentAccount?.status === 'RECONNECTED' ? 'Reconectado' : 'Não sincronizado'}
+                     </p>
                   </div>
-                )}
-            </div>
+                  {currentAccount?.status !== 'CREATION_SUCCESS' && (
+                    <button 
+                      onClick={() => {
+                        setReconnectAccountId(currentAccount?.id);
+                        setIsAuthModalOpen(true);
+                      }}
+                      className="px-2 py-1 bg-white border border-red-200 text-red-600 text-[10px] font-bold rounded-md hover:bg-red-50"
+                    >
+                      Reconectar
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             <button className="flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-xl">
               <Settings className="w-4.5 h-4.5 text-gray-400" />
@@ -459,10 +392,10 @@ onClick={() => {
             </button>
             <button 
               onClick={async () => {
-                await supabase.auth.signOut()
-                setIsAuthenticated(false)
-                setCurrentUserId(null)
-                setCurrentUserEmail(null)
+                await supabase.auth.signOut();
+                setIsAuthenticated(false);
+                setCurrentUserId(null);
+                setCurrentUserEmail(null);
               }}
               className="flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl"
             >
@@ -496,7 +429,7 @@ onClick={() => {
                   {activeTab}
                 </h1>
                 <p className="text-gray-500 mt-1">
-                  {activeTab === Tab.DASHBOARD && `Visão geral para ${currentAccount?.name || 'sua conta'}`}
+                  {activeTab === Tab.DASHBOARD && `Visão geral para ${currentAccount?.unipile_account_id || currentAccount?.name || 'sua conta'}`}
                   {activeTab === Tab.CAMPAIGNS && 'Crie e gerencie seus fluxos de automação.'}
                   {activeTab === Tab.AUDIENCE && 'Encontre e importe leads usando filtros.'}
                   {activeTab === Tab.INBOX && 'Gerencie mensagens não lidas e respostas.'}
@@ -552,15 +485,15 @@ onClick={() => {
       <Suspense fallback={null}>
         <LinkedInAuth 
           isOpen={isAuthModalOpen} 
-onClose={() => {
-  setIsAuthModalOpen(false);
-  setReconnectAccountId(undefined);
-  const url = new URL(window.location.href);
-  if (url.searchParams.has('flow')) {
-    url.searchParams.delete('flow');
-    window.history.replaceState({}, '', url.toString());
-  }
-}}
+          onClose={() => {
+            setIsAuthModalOpen(false);
+            setReconnectAccountId(undefined);
+            const url = new URL(window.location.href);
+            if (url.searchParams.has('flow')) {
+              url.searchParams.delete('flow');
+              window.history.replaceState({}, '', url.toString());
+            }
+          }}
           onSuccess={handleAddAccount}
           reconnectAccountId={reconnectAccountId}
           userId={currentUserId || undefined}

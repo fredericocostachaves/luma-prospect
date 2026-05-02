@@ -1,0 +1,16 @@
+### Get Reconnect Link
+POST https://jpfxxoflclkpqsibvdil.supabase.co/functions/v1/unipile-accounts-reconnect
+Content-Type: application/json
+Authorization: Bearer {{supabase_token}}
+
+{
+  "accountId": "HZ5ydcdSTAiVWl8UrV11VA",
+  "type": "reconnect",
+  "providers": ["LINKEDIN"],
+  "success_redirect_url": "http://localhost:3000",
+  "failure_redirect_url": "http://localhost:3000"
+}
+
+### Check authenticated user
+GET https://jpfxxoflclkpqsibvdil.supabase.co/auth/v1/user
+Authorization: Bearer {{supabase_token}}

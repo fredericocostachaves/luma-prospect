@@ -60,10 +60,11 @@ Deno.serve(async (req) => {
           },
           body: JSON.stringify({
             id: accountId,
+            unipile_account_id: accountId,
             user_id: userId,
             name: 'LinkedIn',
-            status: 'Ativo',
-            initials: 'LI',
+            status: 'CREATION_SUCCESS',
+            initials: 'LI', // Será atualizado via fetchAccounts quando buscar dados do Unipile
           }),
         })
       } else {
@@ -73,7 +74,7 @@ Deno.serve(async (req) => {
             'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ status: 'Ativo' }),
+          body: JSON.stringify({ status: 'CREATION_SUCCESS' }),
         })
       }
     }

@@ -1,0 +1,13 @@
+### Create Unipile Hosted Auth Link
+POST https://jpfxxoflclkpqsibvdil.supabase.co/functions/v1/unipile-accounts-link
+Content-Type: application/json
+Authorization: Bearer {{supabase_token}}
+
+{
+  "success_redirect_url": "http://localhost:3000",
+  "userId": "badcea38-fbb2-45cf-9314-88771b63f42d"
+}
+
+### Check authenticated user
+GET https://jpfxxoflclkpqsibvdil.supabase.co/auth/v1/user
+Authorization: Bearer {{supabase_token}}

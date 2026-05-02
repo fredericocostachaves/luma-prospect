@@ -1,0 +1,3 @@
+### List Unipile accounts
+GET https://jpfxxoflclkpqsibvdil.supabase.co/functions/v1/unipile-accounts
+Authorization: Bearer {{supabase_token}}
