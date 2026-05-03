@@ -15,25 +15,27 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const jsonBody = await req.json()
-    let body: Record<string, any> = {}
-    if (jsonBody && typeof jsonBody === 'object' && !Array.isArray(jsonBody)) {
-      body = jsonBody as Record<string, any>
-    }
-    const accountId = body?.accountId as string | undefined
-    const chatId = body?.chatId as string | undefined
+    const url = new URL(req.url)
+    const account_id = url.searchParams.get('account_id')
+    const type = url.searchParams.get('type')
+    const keywords = url.searchParams.get('keywords')
+    const limit = url.searchParams.get('limit') || '20'
 
-    if (!accountId || !chatId) {
-      return new Response(JSON.stringify({ error: 'Missing accountId or chatId' }), {
+    if (!account_id || !type) {
+      return new Response(JSON.stringify({ error: 'Missing account_id or type' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
+    
+    const queryParams = new URLSearchParams({
+      account_id,
+      type,
+      limit
+    })
+    if (keywords) queryParams.append('keywords', keywords)
 
-    const params = new URLSearchParams()
-    params.set('account_id', accountId)
-
-    const apiUrl = `${UNIPILE_API_URL}/api/v1/chats/${encodeURIComponent(chatId)}/attendees?${params}`
+    const apiUrl = `${UNIPILE_API_URL}/api/v1/linkedin/search/parameters?${queryParams.toString()}`
 
     const headers = {
       'X-API-KEY': UNIPILE_API_KEY,
@@ -45,21 +47,13 @@ Deno.serve(async (req) => {
       headers,
     })
 
-    let data: Record<string, any> = {}
-    try {
-      const jsonData = await response.json()
-      if (typeof jsonData === 'object' && jsonData !== null) {
-        data = jsonData as Record<string, any>
-      }
-    } catch (_e) {
-      data = {}
-    }
+    const responseData = await response.json().catch(() => ({}))
+    const data: Record<string, any> = typeof responseData === 'object' && responseData !== null ? responseData as Record<string, any> : {}
 
     const debug = {
-      requestBody: body,
-      unipileApiUrl: apiUrl,
       unipileApiStatus: response.status,
-      responseData: data,
+      unipileApiUrl: apiUrl,
+      requestParams: { account_id, type, keywords, limit },
     }
 
     return new Response(JSON.stringify({ ...data, _debug: debug }), {

@@ -3,7 +3,11 @@ import { listChatMessages, sendMessageInChat, getChat, UnipileMessage, SendMessa
 
 interface ChatViewProps {
   chatId: string;
-  currentAccount: { id: string; name: string };
+  currentAccount: { 
+    id: string; 
+    name: string;
+    unipile_account_id?: string | null;
+  };
   onClose: () => void;
 }
 
@@ -23,10 +27,8 @@ const ChatView: React.FC<ChatViewProps> = ({ chatId, currentAccount, onClose }) 
       try {
         // Fetch chat details to determine the correct account_id to use
         const chatDetails = await getChat(chatId);
-        console.debug('[ChatView] chatDetails for', chatId, chatDetails);
         setChatDetails(chatDetails || null);
         const accountId = chatDetails?.account_id || currentAccount?.id;
-        console.debug('[ChatView] resolved accountId to use:', accountId);
         setChatAccountId(accountId);
 
         const response = await listChatMessages({ chat_id: chatId, limit: 50, account_id: accountId });
@@ -58,7 +60,6 @@ const ChatView: React.FC<ChatViewProps> = ({ chatId, currentAccount, onClose }) 
 
   const handleSend = async () => {
     if (isReadOnly) {
-      console.warn('Tried to send to read-only chat', chatId);
       return;
     }
     if (!input.trim()) return;
@@ -93,7 +94,25 @@ const ChatView: React.FC<ChatViewProps> = ({ chatId, currentAccount, onClose }) 
     <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-lg max-h-[80vh] flex flex-col">
         <div className="p-4 border-b flex justify-between items-center">
-          <h3 className="font-bold text-lg">Chat</h3>
+          <div className="flex items-center gap-3">
+            {chatDetails?.attendees?.find(a => !a.is_self)?.picture_url && (
+              <img 
+                src={chatDetails.attendees.find(a => !a.is_self)?.picture_url} 
+                alt="Avatar" 
+                className="w-8 h-8 rounded-full object-cover"
+              />
+            )}
+            <div>
+              <h3 className="font-bold text-lg leading-tight">
+                {chatDetails?.name || chatDetails?.attendees?.find(a => !a.is_self)?.name || 'Chat'}
+              </h3>
+              {chatDetails?.attendees?.find(a => !a.is_self)?.title && (
+                <p className="text-xs text-gray-500 truncate max-w-[200px]">
+                  {chatDetails.attendees.find(a => !a.is_self)?.title?.replace(/Seen today/g, 'Visto hoje').replace(/Seen yesterday/g, 'Visto ontem')}
+                </p>
+              )}
+            </div>
+          </div>
           <button onClick={onClose} className="text-gray-500 hover:text-red-500">Fechar</button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-2">

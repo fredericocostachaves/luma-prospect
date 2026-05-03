@@ -1,8 +1,8 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, ChevronDown, ChevronUp, Plus, Check, Columns } from 'lucide-react';
+import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, ChevronDown, ChevronUp, Plus, Check, Columns, UserPlus, RefreshCw } from 'lucide-react';
 import { supabase } from './utils/supabase';
 import { Database } from './database.types';
-import { listAccounts, listChats, UnipileChatsResponse, syncLinkedInAccount, getAccountById } from './services/unipileService';
+import { listAccounts, listChats, UnipileChatsResponse, syncLinkedInAccount, getAccountById, getAccountOwner } from './services/unipileService';
 import Login from './components/Login';
 import ResetPassword from './components/ResetPassword';
 
@@ -13,6 +13,7 @@ const PipelineBoard = lazy(() => import('./components/KanbanInbox'));
 const Inbox = lazy(() => import('./components/Inbox'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const LinkedInAuth = lazy(() => import('./components/LinkedInAuth'));
+const Invitations = lazy(() => import('./components/Invitations'));
 
 enum Tab {
   DASHBOARD = 'Painel de Controle',
@@ -20,6 +21,7 @@ enum Tab {
   AUDIENCE = 'Audiência & Listas',
   INBOX = 'Caixa de Entrada',
   PIPELINE = 'Pipeline de Vendas',
+  INVITATIONS = 'Convites',
 }
 
 interface Account {
@@ -28,6 +30,7 @@ interface Account {
   name: string;
   status: 'CREATION_SUCCESS' | 'RECONNECTED';
   initials: string;
+  avatar_url?: string;
 }
 
 const App: React.FC = () => {
@@ -39,6 +42,7 @@ const App: React.FC = () => {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
   const [isLoadingEmail, setIsLoadingEmail] = useState(true);
+  const [isAppLoading, setIsAppLoading] = useState(true);
   const [syncedAccountIds, setSyncedAccountIds] = useState<Set<string>>(new Set());
   const [accountsRefreshKey, setAccountsRefreshKey] = useState(0);
   
@@ -49,20 +53,13 @@ const App: React.FC = () => {
 
   // Função para buscar contas
   const fetchAccounts = async (userId: string) => {
+    setIsAppLoading(true);
     try {
-      console.log('fetchAccounts: currentUserId =', userId);
-      
       const { data: linkedAccounts, error: linkedError } = await (supabase as any)
         .from('accounts')
         .select('id, unipile_account_id, name, status, initials')
         .eq('user_id', userId)
         .order('created_at', { ascending: true });
-
-      if (linkedError) {
-        console.error('Erro ao carregar contas do Supabase:', linkedError);
-      }
-
-      console.log('Contas vinculadas ao userId', userId, ':', linkedAccounts);
 
       if (linkedAccounts && linkedAccounts.length > 0) {
         const accountsToDisplay: Account[] = [];
@@ -70,26 +67,35 @@ const App: React.FC = () => {
         for (const acc of linkedAccounts) {
           let accountName = acc.name;
           let accountInitials = acc.initials;
+          let avatarUrl = '';
           
           // Se não tem name, buscar no Unipile
-          if ((!accountName || accountName.trim() === '') && acc.unipile_account_id) {
+          if (acc.unipile_account_id) {
             const unipileData = await getAccountById(acc.unipile_account_id);
-            if (unipileData && unipileData.name) {
-              accountName = unipileData.name;
-              accountInitials = (accountName.substring(0, 2) || 'LI').toUpperCase();
+            if (unipileData) {
+              if (!accountName || accountName.trim() === '') {
+                accountName = unipileData.name;
+                accountInitials = (accountName.substring(0, 2) || 'LI').toUpperCase();
+              }
               
-              // Atualizar no banco
-              const { error: updateError } = await (supabase as any)
-                .from('accounts')
-                .update({ 
-                  name: accountName, 
-                  initials: accountInitials,
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', acc.id);
-                
-              if (updateError) {
-                console.error('Erro ao atualizar conta:', updateError);
+              // Buscar o perfil do dono para pegar a imagem correta
+              const ownerData = await getAccountOwner(acc.unipile_account_id);
+              if (ownerData && ownerData.profile_picture_url) {
+                avatarUrl = ownerData.profile_picture_url;
+              } else {
+                avatarUrl = unipileData.profile_picture_url || '';
+              }
+              
+              // Atualizar no banco se o nome mudou ou se não tinha iniciais
+              if (!acc.name || !acc.initials) {
+                const { error: updateError } = await (supabase as any)
+                  .from('accounts')
+                  .update({ 
+                    name: accountName, 
+                    initials: accountInitials,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', acc.id);
               }
             }
           }
@@ -107,7 +113,8 @@ const App: React.FC = () => {
             unipile_account_id: acc.unipile_account_id || '',
             name: accountName || '',
             status: acc.status || 'CREATION_SUCCESS',
-            initials: accountInitials || 'LI'
+            initials: accountInitials || 'LI',
+            avatar_url: avatarUrl
           });
         }
         
@@ -118,7 +125,8 @@ const App: React.FC = () => {
         setCurrentAccount(null);
       }
     } catch (err) {
-      console.error('Erro ao carregar contas:', err);
+    } finally {
+      setIsAppLoading(false);
     }
   };
 
@@ -180,7 +188,6 @@ const App: React.FC = () => {
             accountId: accountId,
             userId: currentUserId
           });
-          console.log('Conta sincronizada:', accountId);
           setSyncedAccountIds(prev => new Set(prev).add(accountId));
           setAccountsRefreshKey(prev => prev + 1);
           // Clean URL
@@ -190,7 +197,6 @@ const App: React.FC = () => {
           cleanUrl.searchParams.delete('reconnect');
           window.history.replaceState({}, '', cleanUrl.toString());
         } catch (err) {
-          console.error('Erro ao sincronizar conta:', err);
         }
       };
       syncAndRefresh();
@@ -207,10 +213,10 @@ const App: React.FC = () => {
     if (activeTab === Tab.INBOX && currentAccount) {
       const fetchChats = async () => {
         try {
-          const response = await listChats({ account_id: currentAccount.id, limit: 50 });
+          const accountId = currentAccount.unipile_account_id || currentAccount.id;
+          const response = await listChats({ account_id: accountId, limit: 50 });
           setChats(response);
         } catch (err) {
-          console.error('Erro ao carregar chats:', err);
         }
       };
       void fetchChats();
@@ -233,20 +239,19 @@ const App: React.FC = () => {
         const firstInitial = nameParts[0]?.[0] || '';
         const lastInitial = nameParts.length > 1 ? nameParts[nameParts.length - 1][0] || '' : '';
         return (firstInitial + (lastInitial || firstInitial)).toUpperCase() || 'LI';
-      })()
+      })(),
+      avatar_url: newAccount.profile_picture_url || ''
     };
 
     // Verificar se a conta já existe
     const accountExists = accounts.some(a => a.id === formattedAccount.id);
     if (accountExists) {
-      console.error('Conta já existe');
       alert('Esta conta já está vinculada. Remova-a primeiro se quiser reconectá-la.');
       return;
     }
 
     // Verificar se usuário já tem uma conta vinculada
     if (accounts.length >= 1) {
-      console.error('Usuário já possui uma conta vinculada');
       alert('Você já possui uma conta vinculada. Remova-a primeiro para adicionar outra.');
       return;
     }
@@ -269,12 +274,10 @@ const App: React.FC = () => {
         .insert(accountToInsert);
 
       if (error) {
-        console.error('Erro ao salvar conta no banco:', error);
         alert('Erro ao salvar a conta. Tente novamente.');
         return;
       }
     } catch (err) {
-      console.error('Erro inesperado ao salvar conta:', err);
       alert('Erro inesperado ao adicionar conta.');
       return;
     }
@@ -293,6 +296,25 @@ const App: React.FC = () => {
       return <ResetPassword />;
     }
     return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  if (isAppLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100 flex flex-col items-center max-w-sm w-full animate-in fade-in zoom-in duration-300">
+          <div className="w-16 h-16 bg-brand-50 rounded-full flex items-center justify-center mb-6">
+            <RefreshCw className="w-8 h-8 text-brand-600 animate-spin" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Carregando sua conta</h2>
+          <p className="text-gray-500 text-center text-sm leading-relaxed">
+            Estamos sincronizando suas conexões e mensagens do Unipile. Por favor, aguarde um momento.
+          </p>
+          <div className="mt-8 w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
+            <div className="bg-brand-600 h-full w-2/3 rounded-full animate-pulse" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const NavItem = ({ tab, icon: Icon, label }: { tab: Tab; icon: any; label: string }) => (
@@ -333,6 +355,7 @@ const App: React.FC = () => {
             <NavItem tab={Tab.AUDIENCE} icon={Users} label="Audiência" />
             <NavItem tab={Tab.INBOX} icon={InboxIcon} label="Inbox" />
             <NavItem tab={Tab.PIPELINE} icon={Columns} label="Pipeline" />
+            <NavItem tab={Tab.INVITATIONS} icon={UserPlus} label="Convites" />
           </nav>
 
           <div className="mt-auto pt-4 border-t border-gray-100 space-y-2">
@@ -362,9 +385,17 @@ const App: React.FC = () => {
               // Has account
               <div className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 text-left">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xs">
-                    {currentAccount?.initials || 'LI'}
-                  </div>
+                  {currentAccount?.avatar_url ? (
+                    <img 
+                      src={currentAccount.avatar_url} 
+                      alt={currentAccount.name} 
+                      className="w-8 h-8 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xs">
+                      {currentAccount?.initials || 'LI'}
+                    </div>
+                  )}
                   <div className="flex-1 overflow-hidden">
                     <p className="text-sm font-semibold text-gray-700 truncate">{currentAccount?.name || currentAccount?.unipile_account_id || 'Nenhuma conta'}</p>
                      <p className={`text-xs ${currentAccount?.status === 'CREATION_SUCCESS' ? 'text-green-600' : currentAccount?.status === 'RECONNECTED' ? 'text-yellow-600' : 'text-gray-500'}`}>
@@ -434,6 +465,7 @@ const App: React.FC = () => {
                   {activeTab === Tab.AUDIENCE && 'Encontre e importe leads usando filtros.'}
                   {activeTab === Tab.INBOX && 'Gerencie mensagens não lidas e respostas.'}
                   {activeTab === Tab.PIPELINE && 'Acompanhe suas oportunidades de venda.'}
+                  {activeTab === Tab.INVITATIONS && 'Gerencie seus convites de conexão e novas amizades.'}
                 </p>
               </div>
               
@@ -467,6 +499,11 @@ const App: React.FC = () => {
             {activeTab === Tab.PIPELINE && (
               <Suspense fallback={<div className="flex items-center justify-center h-96 text-gray-500">Carregando...</div>}>
                 <PipelineBoard />
+              </Suspense>
+            )}
+            {activeTab === Tab.INVITATIONS && (
+              <Suspense fallback={<div className="flex items-center justify-center h-96 text-gray-500">Carregando...</div>}>
+                <Invitations currentAccount={currentAccount} />
               </Suspense>
             )}
           </div>

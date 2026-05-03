@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Check, X, MessageSquare, Clock } from 'lucide-react';
-import { UnipileChatsResponse, UnipileChat, getChat, getChatAttendee } from '../services/unipileService';
+import { UnipileChatsResponse, UnipileChat, getChatMessages, getChatAttendee } from '../services/unipileService';
 
 const formatTimeAgo = (dateString?: string): string => {
   if (!dateString) return '';
@@ -21,20 +21,27 @@ interface InboxMessageData {
   id: string;
   name: string;
   company: string;
+  subject?: string;
   message: string;
   time: string;
   unread: boolean;
   avatarUrl?: string;
   chatId: string;
+  isReadOnly: boolean;
 }
 
 interface InboxProps {
   chatsData?: UnipileChatsResponse | null;
-  currentAccount?: { id: string; name: string } | null;
+  currentAccount?: {
+    id: string;
+    unipile_account_id?: string | null;
+    name: string;
+  } | null;
 }
 
 import ChatView from './ChatView';
 import { sendConnectRequest } from '../services/unipileService';
+import {availableParallelism} from "node:os";
 
 const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount }) => {
   const [messages, setMessages] = useState<InboxMessageData[]>([]);
@@ -45,6 +52,7 @@ const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount }) => {
   const [connectMessage, setConnectMessage] = useState('');
   const [connectLoading, setConnectLoading] = useState(false);
   const [connectSuccess, setConnectSuccess] = useState(false);
+  const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const transformChats = async () => {
@@ -56,42 +64,48 @@ const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount }) => {
 
       setLoading(true);
 
-      const transformed: InboxMessageData[] = await Promise.all(
-        chatsData.items.map(async (chat: UnipileChat) => {
-          const participant = (chat as any).participants?.[0];
-          let avatarUrl = (participant as any)?.avatar_url;
-          let attendeeName = chat.name || (participant as any)?.name || (participant as any)?.username;
+       const transformed: InboxMessageData[] = await Promise.all(
+         chatsData.items.map(async (chat: UnipileChat) => {
+           const accountId = currentAccount?.unipile_account_id || currentAccount?.id;
+           
+           // Buscar mensagens do chat (apenas se não tiver lastMessage já no objeto chat)
+           let lastMessage = chat.lastMessage;
+           if (!lastMessage) {
+             const chatMessages = await getChatMessages(chat.id, accountId);
+             lastMessage = chatMessages?.items?.[0] as any;
+           }
 
-          // Buscar detalhes do chat primeiro para mapear participantes
-          const chatDetails = await getChat(chat.id);
-          const senderId = chat.attendee_provider_id;
-          const attendee = await getChatAttendee(senderId);
-          if (attendee) {
-            if (attendee.picture_url) avatarUrl = attendee.picture_url;
-            if (!attendeeName || attendeeName === '(Sem título)') {
-              attendeeName = attendee.name || '(Sem título)';
-            }
-          }
+           // Dados EXCLUSIVOS do attendee (nome e foto)
+           // Tenta pegar dos attendees já presentes no chat ou busca na API
+           const attendee = chat.attendees?.find(a => !a.is_self) || 
+                          await getChatAttendee(chat.attendee_id, accountId, chat.id);
+           
+           const name = attendee?.name || attendee?.display_name || chat.name || '(Sem título)';
+           const avatarUrl = attendee?.picture_url || (attendee as any)?.avatar_url || '';
+           const title = attendee?.title || (attendee as any)?.headline || '';
+           const company = title ? title.replace(/Seen today/g, 'Visto hoje').replace(/Seen yesterday/g, 'Visto ontem') : '';
 
-          return {
-            id: chat.id,
-            name: attendeeName || '(Sem título)',
-            company: participant?.company || participant?.title || '',
-            message: chatDetails.lastMessage?.text || 'Sem mensagem',
-            time: formatTimeAgo(chat.lastMessage?.timestamp || (chat as any).timestamp || (chat as any).updated_at),
-            unread: (chat.unread_count || 0) > 0,
-            avatarUrl,
-            chatId: chat.id,
-          };
-        })
-      );
+           return {
+             id: chat.id,
+             name,
+             company,
+             subject: chat.subject || '',
+             message: lastMessage?.text || chat.lastMessage?.text || 'Sem mensagem',
+             time: formatTimeAgo(lastMessage?.timestamp || chat.lastMessage?.timestamp || (chat as any).timestamp || (chat as any).updated_at),
+             unread: (chat.unread_count || 0) > 0,
+             avatarUrl,
+             chatId: chat.id,
+             isReadOnly: Boolean(chat.read_only || chat.content_type === 'sponsored' || (chat.disabledFeatures || []).includes('reply')),
+           };
+         })
+       );
 
       setMessages(transformed);
       setLoading(false);
     };
 
     void transformChats();
-  }, [chatsData]);
+  }, [chatsData, currentAccount]);
 
   const unreadCount = messages.filter(m => m.unread).length;
 
@@ -121,14 +135,19 @@ const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount }) => {
           messages.map((msg) => (
           <div key={msg.id} onClick={() => setSelectedChatId(msg.chatId)} className={`p-5 hover:bg-gray-50 transition-all flex gap-4 group cursor-pointer ${msg.unread ? 'bg-blue-50/10' : ''}`}>
               <div className="flex flex-col items-center gap-2">
-                {msg.avatarUrl ? (
-                  <img src={msg.avatarUrl} alt={msg.name} className="w-10 h-10 rounded-full object-cover shadow-sm" />
-                ) : (
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${msg.unread ? 'bg-brand-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
-                    {msg.name.split(' ').map(n => n[0]).join('')}
-                  </div>
-                )}
-              </div>
+                 {msg.avatarUrl && !imgErrors[msg.id] ? (
+                   <img
+                     src={msg.avatarUrl}
+                     alt={msg.name}
+                     className="w-10 h-10 rounded-full object-cover shadow-sm"
+                     onError={() => setImgErrors(prev => ({ ...prev, [msg.id]: true }))}
+                   />
+                 ) : (
+                   <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${msg.unread ? 'bg-brand-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                     {msg.name.split(' ').map(n => n[0]).join('')}
+                   </div>
+                 )}
+               </div>
              
              <div className="flex-1 min-w-0">
                 <div className="flex justify-between items-start mb-1">
@@ -145,6 +164,11 @@ const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount }) => {
                     </span>
                 </div>
                 
+                {msg.subject && (
+                  <p className="text-xs text-gray-400 mb-1 truncate">
+                    {msg.subject}
+                  </p>
+                )}
                 <p className={`text-sm leading-relaxed mb-3 ${msg.unread ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                     {msg.message}
                 </p>
@@ -155,10 +179,12 @@ const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount }) => {
                         <Check className="w-3.5 h-3.5" />
                         Qualificar (Pipeline)
                     </button>
-                    <button onClick={(e) => { e.stopPropagation(); setSelectedChatId(msg.chatId); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors border border-gray-200">
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        Responder
-                    </button>
+                    {!msg.isReadOnly && (
+                      <button onClick={(e) => { e.stopPropagation(); setSelectedChatId(msg.chatId); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors border border-gray-200">
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          Responder
+                      </button>
+                    )}
                     <button onClick={(e) => { e.stopPropagation(); /* archive placeholder */ }} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors ml-auto" title="Arquivar">
                         <X className="w-4 h-4" />
                     </button>
@@ -175,7 +201,7 @@ const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount }) => {
         )}
 
         {selectedChatId && currentAccount && (
-          <ChatView chatId={selectedChatId} currentAccount={currentAccount as any} onClose={() => setSelectedChatId(null)} />
+          <ChatView chatId={selectedChatId} currentAccount={currentAccount} onClose={() => setSelectedChatId(null)} />
         )}
       </div>
       

@@ -2,7 +2,7 @@ export {}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, prefer',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 }
 
@@ -11,17 +11,44 @@ const UNIPILE_API_KEY = Deno.env.get('UNIPILE_API_KEY') || ''
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
     const url = new URL(req.url)
-    const params = url.searchParams.toString()
-    const apiUrl = `${UNIPILE_API_URL}/api/v1/chats${params ? `?${params}` : ''}`
+    let queryParams = url.searchParams.toString()
+
+    let body: Record<string, any> = {}
+    if (req.method === 'POST') {
+      try {
+        const jsonBody = await req.json()
+        if (typeof jsonBody === 'object' && jsonBody !== null) {
+          body = jsonBody as Record<string, any>
+          
+          // Se recebemos um body no POST, convertemos para query params para a Unipile
+          const bodyParams = new URLSearchParams()
+          for (const [key, value] of Object.entries(body)) {
+            if (value !== undefined && value !== null) {
+              bodyParams.set(key, String(value))
+            }
+          }
+          const combinedParams = new URLSearchParams(queryParams)
+          for (const [key, value] of bodyParams.entries()) {
+            combinedParams.set(key, value)
+          }
+          queryParams = combinedParams.toString()
+        }
+      } catch (_e) {
+        // Ignorar erro se o body não for JSON
+      }
+    }
+
+    const apiUrl = `${UNIPILE_API_URL}/api/v1/chats${queryParams ? `?${queryParams}` : ''}`
 
     const headers = {
       'X-API-KEY': UNIPILE_API_KEY,
       'accept': 'application/json',
+      'Content-Type': 'application/json',
     }
 
     const response = await fetch(apiUrl, {
@@ -29,8 +56,17 @@ Deno.serve(async (req) => {
       headers,
     })
 
-    const data = await response.json()
-    return new Response(JSON.stringify(data), {
+    const responseData = await response.json()
+    const data: Record<string, any> = typeof responseData === 'object' && responseData !== null ? responseData as Record<string, any> : {}
+
+    const debug = {
+      unipileApiStatus: response.status,
+      unipileApiUrl: apiUrl,
+      requestBody: body,
+      responseData: data,
+    }
+
+    return new Response(JSON.stringify({ ...data, _debug: debug }), {
       status: response.status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })

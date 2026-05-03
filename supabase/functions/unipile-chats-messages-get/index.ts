@@ -2,7 +2,7 @@ export {}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, prefer',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 }
 
@@ -11,7 +11,7 @@ const UNIPILE_API_KEY = Deno.env.get('UNIPILE_API_KEY') || ''
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
@@ -47,8 +47,24 @@ Deno.serve(async (req) => {
       headers,
     })
 
-    const data = await response.json()
-    return new Response(JSON.stringify(data), {
+    let data: Record<string, any> = {}
+    try {
+      const jsonData = await response.json()
+      if (typeof jsonData === 'object' && jsonData !== null) {
+        data = jsonData as Record<string, any>
+      }
+    } catch (_e) {
+      data = {}
+    }
+
+    const debug = {
+      requestParams: { chatId, limit, before, after, accountId },
+      unipileApiUrl: apiUrl,
+      unipileApiStatus: response.status,
+      responseData: data,
+    }
+
+    return new Response(JSON.stringify({ ...data, _debug: debug }), {
       status: response.status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })

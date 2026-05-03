@@ -47,9 +47,11 @@ const StatCard = ({ title, value, sub, icon: Icon, color }: any) => (
 
 interface AccountFromApp {
   id: string;
+  unipile_account_id?: string | null;
   name: string;
   status: 'CREATION_SUCCESS' | 'RECONNECTED';
   initials: string;
+  avatar_url?: string;
 }
 
 interface DashboardProps {

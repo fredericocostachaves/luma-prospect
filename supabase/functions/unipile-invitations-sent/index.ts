@@ -15,29 +15,15 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const jsonBody = await req.json()
-    let body: Record<string, any> = {}
-    if (jsonBody && typeof jsonBody === 'object' && !Array.isArray(jsonBody)) {
-      body = jsonBody as Record<string, any>
-    }
-    const accountId = body?.accountId as string | undefined
-    const chatId = body?.chatId as string | undefined
+    const url = new URL(req.url)
+    const queryParams = url.searchParams.toString()
 
-    if (!accountId || !chatId) {
-      return new Response(JSON.stringify({ error: 'Missing accountId or chatId' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    const params = new URLSearchParams()
-    params.set('account_id', accountId)
-
-    const apiUrl = `${UNIPILE_API_URL}/api/v1/chats/${encodeURIComponent(chatId)}/attendees?${params}`
+    const apiUrl = `${UNIPILE_API_URL}/api/v1/users/invite/sent${queryParams ? `?${queryParams}` : ''}`
 
     const headers = {
       'X-API-KEY': UNIPILE_API_KEY,
       'accept': 'application/json',
+      'Content-Type': 'application/json',
     }
 
     const response = await fetch(apiUrl, {
@@ -45,20 +31,12 @@ Deno.serve(async (req) => {
       headers,
     })
 
-    let data: Record<string, any> = {}
-    try {
-      const jsonData = await response.json()
-      if (typeof jsonData === 'object' && jsonData !== null) {
-        data = jsonData as Record<string, any>
-      }
-    } catch (_e) {
-      data = {}
-    }
+    const responseData = await response.json().catch(() => ({}))
+    const data: Record<string, any> = typeof responseData === 'object' && responseData !== null ? responseData as Record<string, any> : {}
 
     const debug = {
-      requestBody: body,
-      unipileApiUrl: apiUrl,
       unipileApiStatus: response.status,
+      unipileApiUrl: apiUrl,
       responseData: data,
     }
 

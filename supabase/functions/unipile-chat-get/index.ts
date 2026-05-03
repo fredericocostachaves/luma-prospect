@@ -10,30 +10,27 @@ const UNIPILE_API_URL = Deno.env.get('UNIPILE_API_URL') || 'https://api34.unipil
 const UNIPILE_API_KEY = Deno.env.get('UNIPILE_API_KEY') || ''
 
 Deno.serve(async (req) => {
+  // Tratamento de CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const jsonBody = await req.json()
-    let body: Record<string, any> = {}
-    if (jsonBody && typeof jsonBody === 'object' && !Array.isArray(jsonBody)) {
-      body = jsonBody as Record<string, any>
-    }
-    const accountId = body?.accountId as string | undefined
-    const chatId = body?.chatId as string | undefined
+    const url = new URL(req.url)
+    const chatId = url.searchParams.get('chatId')
+    const accountId = url.searchParams.get('account_id')
 
-    if (!accountId || !chatId) {
-      return new Response(JSON.stringify({ error: 'Missing accountId or chatId' }), {
+    if (!chatId) {
+      return new Response(JSON.stringify({ error: 'Missing chatId' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
     const params = new URLSearchParams()
-    params.set('account_id', accountId)
+    if (accountId) params.set('account_id', accountId)
 
-    const apiUrl = `${UNIPILE_API_URL}/api/v1/chats/${encodeURIComponent(chatId)}/attendees?${params}`
+    const apiUrl = `${UNIPILE_API_URL}/api/v1/chats/${encodeURIComponent(chatId)}${params.toString() ? `?${params}` : ''}`
 
     const headers = {
       'X-API-KEY': UNIPILE_API_KEY,
@@ -45,24 +42,16 @@ Deno.serve(async (req) => {
       headers,
     })
 
-    let data: Record<string, any> = {}
-    try {
-      const jsonData = await response.json()
-      if (typeof jsonData === 'object' && jsonData !== null) {
-        data = jsonData as Record<string, any>
-      }
-    } catch (_e) {
-      data = {}
-    }
-
+    const jsonData = await response.json().catch(() => ({}))
+    const responseData = (typeof jsonData === 'object' && jsonData !== null ? jsonData : {}) as Record<string, any>
+    
     const debug = {
-      requestBody: body,
+      requestParams: { chatId, accountId },
       unipileApiUrl: apiUrl,
       unipileApiStatus: response.status,
-      responseData: data,
     }
 
-    return new Response(JSON.stringify({ ...data, _debug: debug }), {
+    return new Response(JSON.stringify({ ...responseData, _debug: debug }), {
       status: response.status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })

@@ -15,51 +15,41 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const jsonBody = await req.json()
-    let body: Record<string, any> = {}
-    if (jsonBody && typeof jsonBody === 'object' && !Array.isArray(jsonBody)) {
-      body = jsonBody as Record<string, any>
-    }
-    const accountId = body?.accountId as string | undefined
-    const chatId = body?.chatId as string | undefined
+    const body = await req.json().catch(() => ({}))
+    const { account_id, ...searchParams } = body
 
-    if (!accountId || !chatId) {
-      return new Response(JSON.stringify({ error: 'Missing accountId or chatId' }), {
+    if (!account_id) {
+      return new Response(JSON.stringify({ error: 'Missing account_id' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
-
-    const params = new URLSearchParams()
-    params.set('account_id', accountId)
-
-    const apiUrl = `${UNIPILE_API_URL}/api/v1/chats/${encodeURIComponent(chatId)}/attendees?${params}`
+    
+    const queryParams = new URLSearchParams({
+      account_id
+    })
+    
+    const apiUrl = `${UNIPILE_API_URL}/api/v1/linkedin/search?${queryParams.toString()}`
 
     const headers = {
       'X-API-KEY': UNIPILE_API_KEY,
       'accept': 'application/json',
+      'Content-Type': 'application/json'
     }
 
     const response = await fetch(apiUrl, {
-      method: 'GET',
+      method: 'POST',
       headers,
+      body: JSON.stringify(searchParams)
     })
 
-    let data: Record<string, any> = {}
-    try {
-      const jsonData = await response.json()
-      if (typeof jsonData === 'object' && jsonData !== null) {
-        data = jsonData as Record<string, any>
-      }
-    } catch (_e) {
-      data = {}
-    }
+    const responseData = await response.json().catch(() => ({}))
+    const data: Record<string, any> = typeof responseData === 'object' && responseData !== null ? responseData as Record<string, any> : {}
 
     const debug = {
-      requestBody: body,
-      unipileApiUrl: apiUrl,
       unipileApiStatus: response.status,
-      responseData: data,
+      unipileApiUrl: apiUrl,
+      requestBody: body,
     }
 
     return new Response(JSON.stringify({ ...data, _debug: debug }), {

@@ -4,10 +4,13 @@ const EDGE_FUNCTION_URL = import.meta.env.VITE_SUPABASE_EDGE_FUNCTIONS_URL || ''
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY || ''
 
 const getEdgeFunctionUrl = (path: string) => {
-  if (EDGE_FUNCTION_URL) {
-    return `${EDGE_FUNCTION_URL}${path}`
-  }
-  return path
+  if (!EDGE_FUNCTION_URL) return path;
+  
+  // Garante que baseUrl não termine com / e path comece com /
+  const baseUrl = EDGE_FUNCTION_URL.endsWith('/') ? EDGE_FUNCTION_URL.slice(0, -1) : EDGE_FUNCTION_URL;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  
+  return `${baseUrl}${cleanPath}`;
 }
 
 const getAuthHeaders = async (): Promise<Record<string, string>> => {
@@ -31,7 +34,6 @@ const parseJsonResponse = async (response: Response): Promise<any> => {
   }
 
   if (!contentType || !contentType.includes('application/json')) {
-    console.error('Resposta inesperada (não-JSON):', text.substring(0, 100))
     throw new Error('O servidor retornou HTML em vez de JSON.')
   }
 
@@ -71,7 +73,6 @@ export const getHostedAuthLink = async (userId?: string, successRedirectUrl?: st
 
     return await parseJsonResponse(response)
   } catch (error) {
-    console.error('Erro ao chamar o backend para Hosted Auth:', error)
     throw error
   }
 }
@@ -86,7 +87,6 @@ export const listAccounts = async (): Promise<any> => {
 
     return await parseJsonResponse(response)
   } catch (error) {
-    console.error('Erro ao listar contas do Unipile:', error)
     throw error
   }
 }
@@ -102,7 +102,6 @@ export const syncLinkedInAccount = async (payload: { accountId: string; userId: 
 
     return await parseJsonResponse(response)
   } catch (error) {
-    console.error('Erro ao sincronizar conta LinkedIn:', error)
     throw error
   }
 }
@@ -114,11 +113,12 @@ export interface UnipileAccount {
   type: string
   sources: Array<{
     type: string
-  status: string
+    status: string
     id: string
   }>
   created_at: string
   updated_at: string
+  profile_picture_url?: string
 }
 
 export const getAccountById = async (accountId: string): Promise<UnipileAccount | null> => {
@@ -130,13 +130,38 @@ export const getAccountById = async (accountId: string): Promise<UnipileAccount 
     })
     
     if (!response.ok) {
-      console.error('Erro ao buscar conta no Unipile:', response.status)
       return null
     }
     
     return await response.json()
   } catch (error) {
-    console.error('Erro ao buscar conta por ID:', error)
+    return null
+  }
+}
+
+export interface UnipileAccountOwner {
+  id: string
+  name: string
+  profile_picture_url?: string
+  headline?: string
+  location?: string
+  public_url?: string
+}
+
+export const getAccountOwner = async (accountId: string): Promise<UnipileAccountOwner | null> => {
+  try {
+    const headers = await getAuthHeaders()
+    const response = await fetch(getEdgeFunctionUrl(`/unipile-account-owner?account_id=${encodeURIComponent(accountId)}`), {
+      method: 'GET',
+      headers
+    })
+
+    if (!response.ok) {
+      return null
+    }
+
+    return await response.json()
+  } catch (error) {
     return null
   }
 }
@@ -170,7 +195,6 @@ export const getReconnectLink = async (payload: HostedReconnectRequest): Promise
 
     return await parseJsonResponse(response)
   } catch (error) {
-    console.error('Erro ao gerar link de reconexão:', error)
     throw error
   }
 }
@@ -246,6 +270,8 @@ export interface LastMessage {
 }
 
 export interface UnipileChat {
+  attendees?: UnipileChatAttendee[];
+  attendee_id?: string;
   object?: string
   id: string
   account_id?: string
@@ -287,48 +313,75 @@ export interface ListChatsParams {
 
 export const listChats = async (params?: ListChatsParams): Promise<UnipileChatsResponse> => {
   try {
-    const queryParams = new URLSearchParams()
-    if (params) {
-      if (params.unread !== undefined) queryParams.set('unread', String(params.unread))
-      if (params.cursor) queryParams.set('cursor', params.cursor)
-      if (params.before) queryParams.set('before', params.before)
-      if (params.after) queryParams.set('after', params.after)
-      if (params.limit) queryParams.set('limit', String(params.limit))
-      if (params.account_type) queryParams.set('account_type', params.account_type)
-      if (params.account_id) queryParams.set('account_id', params.account_id)
-    }
-
-    const url = getEdgeFunctionUrl(`/unipile-chats${queryParams.toString() ? `?${queryParams}` : ''}`)
+    const url = getEdgeFunctionUrl('/unipile-chats')
     const headers = await getAuthHeaders()
+    const body = params ? {
+      ...(params.unread !== undefined && { unread: params.unread }),
+      ...(params.cursor && { cursor: params.cursor }),
+      ...(params.before && { before: params.before }),
+      ...(params.after && { after: params.after }),
+      ...(params.limit && { limit: params.limit }),
+      ...(params.account_type && { account_type: params.account_type }),
+      ...(params.account_id && { account_id: params.account_id }),
+    } : {}
+
     const response = await fetch(url, {
-      method: 'GET',
-      headers
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body)
     })
 
-    return await parseJsonResponse(response)
+    const data = await parseJsonResponse(response)
+    return data
   } catch (error) {
-    console.error('Erro ao listar chats do Unipile:', error)
     throw error
   }
 }
 
-export const getChat = async (chatId: string): Promise<UnipileChat | null> => {
+export const getChatMessages = async (chatId: string, accountId?: string): Promise<ListChatMessagesResponse> => {
   try {
+    const queryParams = new URLSearchParams()
+    if (accountId) queryParams.set('account_id', accountId)
+    queryParams.set('limit', '50')
+
+    const url = getEdgeFunctionUrl(`/unipile-chats-messages-get?chatId=${encodeURIComponent(chatId)}&${queryParams}`)
     const headers = await getAuthHeaders()
-    const url = getEdgeFunctionUrl(`/unipile-chats-messages?chatId=${encodeURIComponent(chatId)}`)
     const response = await fetch(url, {
       method: 'GET',
       headers
     })
 
-    return await parseJsonResponse(response)
+    const data = await parseJsonResponse(response)
+    return data
   } catch (error) {
-    console.error(`Erro ao buscar chat ${chatId}:`, error)
+    throw error
+  }
+}
+
+export const getChat = async (chatId: string, accountId?: string): Promise<UnipileChat | null> => {
+  try {
+    const queryParams = new URLSearchParams()
+    if (accountId) queryParams.set('account_id', accountId)
+    
+    const url = getEdgeFunctionUrl(`/unipile-chat-get?chatId=${encodeURIComponent(chatId)}${queryParams.toString() ? `&${queryParams}` : ''}`)
+    const headers = await getAuthHeaders()
+    const response = await fetch(url, {
+      method: 'GET',
+      headers
+    })
+
+    const data = await parseJsonResponse(response)
+    // Remove _debug before returning
+    if (data?._debug) delete data._debug
+    return data as UnipileChat | null
+  } catch (error) {
     return null
   }
 }
 
 export interface UnipileChatAttendee {
+  display_name: string | undefined;
+  title: string;
   object?: string
   id: string
   account_id?: string
@@ -337,21 +390,38 @@ export interface UnipileChatAttendee {
   is_self?: number
   hidden?: number
   picture_url?: string
+  profile_picture_url?: string
+  avatar_url?: string
   profile_url?: string
   specifics?: Record<string, any>
 }
 
-export const getChatAttendee = async (attendeeId: string): Promise<UnipileChatAttendee | null> => {
+export const getChatAttendee = async (attendeeId?: string, accountId?: string, chatId?: string): Promise<UnipileChatAttendee | null> => {
   try {
     const headers = await getAuthHeaders()
-    const response = await fetch(getEdgeFunctionUrl(`/unipile-chat-attendees?attendeeId=${encodeURIComponent(attendeeId)}`), {
-      method: 'GET',
-      headers
+    const body: Record<string, string> = {
+      ...(attendeeId && { attendeeId }),
+      ...(accountId && { accountId }),
+      ...(chatId && { chatId }),
+    }
+
+    const response = await fetch(getEdgeFunctionUrl('/unipile-chat-attendees'), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body)
     })
 
-    return await parseJsonResponse(response)
+    const data = await parseJsonResponse(response)
+    // Find the specific attendee in the attendees list
+    if (data?.items && Array.isArray(data.items)) {
+      if (attendeeId) {
+        return data.items.find((a: any) => a.id === attendeeId) || null
+      }
+      // Se não passou ID, pega o primeiro que não seja o próprio usuário
+      return data.items.find((a: any) => !a.is_self) || data.items[0] || null
+    }
+    return null
   } catch (error) {
-    console.error(`Erro ao buscar attendee ${attendeeId}:`, error)
     return null
   }
 }
@@ -395,7 +465,6 @@ export const listChatMessages = async (params: ListChatMessagesParams): Promise<
     })
     return await parseJsonResponse(response)
   } catch (error) {
-    console.error('Erro ao listar mensagens do chat:', error)
     throw error
   }
 }
@@ -431,7 +500,6 @@ export const sendMessageInChat = async (payload: SendMessageRequest): Promise<Se
     })
     return await parseJsonResponse(response)
   } catch (error) {
-    console.error('Erro ao enviar mensagem:', error)
     throw error
   }
 }
@@ -461,7 +529,6 @@ export const startChat = async (payload: StartChatRequest): Promise<StartChatRes
     })
     return await parseJsonResponse(response)
   } catch (error) {
-    console.error('Erro ao iniciar chat:', error)
     throw error
   }
 }
@@ -475,6 +542,213 @@ export interface SendConnectRequest {
 export interface SendConnectResponse {
   object?: string
   status?: string
+}
+
+export interface UnipileInvitation {
+  id: string
+  account_id: string
+  provider_id: string
+  sender_id: string
+  recipient_id: string
+  status: string
+  message?: string
+  timestamp?: string
+  sent_date?: string
+  date?: string
+  invited_user?: string
+  invited_user_description?: string
+  invited_user_id?: string
+  attendee?: UnipileChatAttendee
+  recipient?: UnipileChatAttendee
+  sender?: UnipileChatAttendee
+}
+
+export interface ListInvitationsResponse {
+  object: string
+  items: UnipileInvitation[]
+  cursor?: string
+}
+
+export interface SendInvitationRequest {
+  account_id: string
+  provider_id: string
+  message?: string
+}
+
+export const listSentInvitations = async (accountId: string): Promise<ListInvitationsResponse> => {
+  try {
+    const headers = await getAuthHeaders()
+    const response = await fetch(getEdgeFunctionUrl(`/unipile-invitations-sent?account_id=${encodeURIComponent(accountId)}`), {
+      method: 'GET',
+      headers
+    })
+    return await parseJsonResponse(response)
+  } catch (error) {
+    throw error
+  }
+}
+
+export const listReceivedInvitations = async (accountId: string): Promise<ListInvitationsResponse> => {
+  try {
+    const headers = await getAuthHeaders()
+    const response = await fetch(getEdgeFunctionUrl(`/unipile-invitations-received?account_id=${encodeURIComponent(accountId)}`), {
+      method: 'GET',
+      headers
+    })
+    return await parseJsonResponse(response)
+  } catch (error) {
+    throw error
+  }
+}
+
+export const sendInvitation = async (payload: SendInvitationRequest): Promise<any> => {
+  try {
+    const headers = await getAuthHeaders()
+    const response = await fetch(getEdgeFunctionUrl('/unipile-invitations-send'), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    })
+    return await parseJsonResponse(response)
+  } catch (error) {
+    throw error
+  }
+}
+
+export const handleInvitation = async (invitationId: string, action: 'ACCEPT' | 'DECLINE'): Promise<any> => {
+  try {
+    const headers = await getAuthHeaders()
+    const response = await fetch(getEdgeFunctionUrl(`/unipile-invitations-handle?invitationId=${encodeURIComponent(invitationId)}`), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action })
+    })
+    return await parseJsonResponse(response)
+  } catch (error) {
+    throw error
+  }
+}
+
+export const cancelInvitation = async (invitationId: string): Promise<any> => {
+  try {
+    const headers = await getAuthHeaders()
+    const response = await fetch(getEdgeFunctionUrl(`/unipile-invitations-cancel?invitationId=${encodeURIComponent(invitationId)}`), {
+      method: 'DELETE',
+      headers
+    })
+    return await parseJsonResponse(response)
+  } catch (error) {
+    throw error
+  }
+}
+
+export interface UnipileUserProfile {
+  object: string
+  provider: string
+  provider_id: string
+  public_identifier?: string
+  member_urn?: string
+  first_name?: string
+  last_name?: string
+  display_name?: string
+  headline?: string
+  location?: string
+  profile_picture_url?: string
+  picture_url?: string
+  avatar_url?: string
+  profile_picture_url_large?: string
+  background_picture_url?: string
+  connections_count?: number
+  follower_count?: number
+  title?: string // Para compatibilidade com busca
+}
+
+export interface LinkedInSearchParameter {
+  object: 'LinkedinSearchParameter'
+  title: string
+  id: string
+  picture_url?: string
+}
+
+export interface LinkedInSearchParametersResponse {
+  object: 'LinkedinSearchParametersList'
+  items: LinkedInSearchParameter[]
+  paging: {
+    page_count: number
+  }
+}
+
+export interface LinkedInSearchRequest {
+  account_id: string
+  api?: 'classic' | 'sales_navigator' | 'recruiter'
+  category?: 'people' | 'companies' | 'jobs' | 'posts'
+  keywords?: string
+  location?: string[]
+  industry?: string[]
+  network_distance?: (1 | 2 | 3)[]
+  company?: string[]
+  [key: string]: any
+}
+
+export interface LinkedInSearchResponse {
+  object: 'LinkedinSearchList'
+  items: UnipileUserProfile[]
+  cursor?: string
+}
+
+export const getProfile = async (identifier: string, accountId: string): Promise<UnipileUserProfile | null> => {
+  try {
+    const headers = await getAuthHeaders()
+    const url = getEdgeFunctionUrl(`/unipile-profile-get?identifier=${encodeURIComponent(identifier)}&account_id=${encodeURIComponent(accountId)}`)
+    const response = await fetch(url, {
+      method: 'GET',
+      headers
+    })
+
+    if (!response.ok) {
+      return null
+    }
+
+    const data = await response.json()
+    if (data?._debug) delete data._debug
+    return data as UnipileUserProfile
+  } catch (error) {
+    return null
+  }
+}
+
+export const getLinkedInSearchParameters = async (accountId: string, type: string, keywords?: string): Promise<LinkedInSearchParametersResponse> => {
+  try {
+    const headers = await getAuthHeaders()
+    const queryParams = new URLSearchParams({ account_id: accountId, type })
+    if (keywords) queryParams.append('keywords', keywords)
+    
+    const url = getEdgeFunctionUrl(`/unipile-linkedin-search-parameters?${queryParams.toString()}`)
+    const response = await fetch(url, {
+      method: 'GET',
+      headers
+    })
+
+    return await parseJsonResponse(response)
+  } catch (error) {
+    throw error
+  }
+}
+
+export const performLinkedInSearch = async (payload: LinkedInSearchRequest): Promise<LinkedInSearchResponse> => {
+  try {
+    const headers = await getAuthHeaders()
+    const url = getEdgeFunctionUrl('/unipile-linkedin-search')
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    })
+
+    return await parseJsonResponse(response)
+  } catch (error) {
+    throw error
+  }
 }
 
 export const sendConnectRequest = async (payload: SendConnectRequest): Promise<SendConnectResponse> => {
@@ -491,7 +765,6 @@ export const sendConnectRequest = async (payload: SendConnectRequest): Promise<S
     })
     return await parseJsonResponse(response)
   } catch (error) {
-    console.error('Erro ao enviar solicitação de conexão:', error)
     throw error
   }
 }
