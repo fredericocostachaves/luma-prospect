@@ -541,7 +541,7 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
                           {displayName}
                         </h4>
                         {description && (
-                          <span className="text-[10px] text-gray-400 truncate hidden sm:inline">• {description}</span>
+                          <span className="text-[10px] text-gray-400 truncate hidden sm:inline">{description}</span>
                         )}
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
                           inv.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
