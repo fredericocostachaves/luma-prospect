@@ -1,8 +1,8 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, ChevronDown, ChevronUp, Plus, Check, Columns, UserPlus, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, Plus, Columns, UserPlus, RefreshCw } from 'lucide-react';
 import { supabase } from './utils/supabase';
 import { Database } from './database.types';
-import { listAccounts, listChats, UnipileChatsResponse, syncLinkedInAccount, getAccountById, getAccountOwner } from './services/unipileService';
+import { listChats, UnipileChatsResponse, syncLinkedInAccount, getAccountById, getAccountOwner } from './services/unipileService';
 import Login from './components/Login';
 import ResetPassword from './components/ResetPassword';
 
@@ -49,13 +49,11 @@ const App: React.FC = () => {
   // Account State
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
-  const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
-
-  // Função para buscar contas
+// Função para buscar contas
   const fetchAccounts = async (userId: string) => {
     setIsAppLoading(true);
     try {
-      const { data: linkedAccounts, error: linkedError } = await (supabase as any)
+      const { data: linkedAccounts} = await (supabase as any)
         .from('accounts')
         .select('id, unipile_account_id, name, status, initials')
         .eq('user_id', userId)
@@ -85,21 +83,9 @@ const App: React.FC = () => {
               } else {
                 avatarUrl = unipileData.profile_picture_url || '';
               }
-              
-              // Atualizar no banco se o nome mudou ou se não tinha iniciais
-              if (!acc.name || !acc.initials) {
-                const { error: updateError } = await (supabase as any)
-                  .from('accounts')
-                  .update({ 
-                    name: accountName, 
-                    initials: accountInitials,
-                    updated_at: new Date().toISOString()
-                  })
-                  .eq('id', acc.id);
-              }
             }
           }
-          
+
           // Gerar initials se não tiver (primeira letra do primeiro e último nome)
           if (!accountInitials && accountName) {
             const nameParts = accountName.trim().split(/\s+/);
@@ -307,7 +293,7 @@ const App: React.FC = () => {
           </div>
           <h2 className="text-xl font-bold text-gray-900 mb-2">Carregando sua conta</h2>
           <p className="text-gray-500 text-center text-sm leading-relaxed">
-            Estamos sincronizando suas conexões e mensagens do Unipile. Por favor, aguarde um momento.
+            Estamos sincronizando suas conexões e mensagens do LinkedIn. Por favor, aguarde um momento.
           </p>
           <div className="mt-8 w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-brand-600 h-full w-2/3 rounded-full animate-pulse" />

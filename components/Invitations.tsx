@@ -31,15 +31,28 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
   const [newMessage, setNewMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isSearchingProfile, setIsSearchingProfile] = useState(false);
+  const [isFetchingPictures, setIsFetchingPictures] = useState(false);
   const [searchedProfile, setSearchedProfile] = useState<UnipileUserProfile | null>(null);
   const [searchResults, setSearchResults] = useState<UnipileUserProfile[]>([]);
   const [searchKeywords, setSearchKeywords] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [profilePictures, setProfilePictures] = useState<Record<string, string>>({});
+  const [profilePictures, setProfilePictures] = useState<Record<string, string | null>>({});
   const [parameterSuggestions, setParameterSuggestions] = useState<LinkedInSearchParameter[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const isMounted = useRef(true);
+  
+  // refs para controlar a busca e evitar loops de cancelamento indesejados
+  const fetchVersionRef = useRef(0);
+  const prevDataDeps = useRef({ accId: '', sentLen: 0, recLen: 0, loading: true });
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -93,50 +106,84 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
   }, [currentAccount]);
 
   useEffect(() => {
-    let active = true;
+    // Identificar se os dados REAIS mudaram para decidir se cancelamos a busca em curso
+    const accId = currentAccount?.unipile_account_id || currentAccount?.id || '';
+    const sentLen = sentInvitations.length;
+    const recLen = receivedInvitations.length;
+    
+    const dataChanged = accId !== prevDataDeps.current.accId || 
+                        sentLen !== prevDataDeps.current.sentLen || 
+                        recLen !== prevDataDeps.current.recLen ||
+                        loading !== prevDataDeps.current.loading;
+
+    if (dataChanged) {
+      fetchVersionRef.current++;
+      prevDataDeps.current = { accId, sentLen, recLen, loading };
+    }
+
+    const currentVersion = fetchVersionRef.current;
+
     const fetchPictures = async () => {
-      if (!currentAccount) return;
-      const accountId = currentAccount.unipile_account_id || currentAccount.id;
+      if (!currentAccount || loading || isFetchingPictures) return;
+      
       const allInvs = [...sentInvitations, ...receivedInvitations];
       
-      // Filtrar IDs que ainda não temos no cache de imagens
+      // Filtrar IDs que ainda não temos no cache de imagens (undefined significa que não tentamos)
       const idsToFetch = allInvs
         .map(inv => inv.invited_user_id)
-        .filter((id): id is string => !!id && !profilePictures[id]);
+        .filter((id): id is string => !!id && profilePictures[id] === undefined);
 
-      if (idsToFetch.length === 0) return;
+      if (idsToFetch.length === 0) {
+        return;
+      }
+
+      setIsFetchingPictures(true);
 
       // Pegar apenas IDs únicos para evitar requisições duplicadas
       const uniqueIds = Array.from(new Set(idsToFetch));
+      const accountId = currentAccount.unipile_account_id || currentAccount.id;
 
-      // Busca sequencialmente para evitar sobrecarga
-      for (const id of uniqueIds) {
-        if (!active) break;
-        try {
-          const profile = await getProfile(id, accountId);
-          if (!active) break;
+      // Busca em paralelo com limite de concorrência para ser mais rápido sem sobrecarregar
+      try {
+        const concurrency = 5;
+        for (let i = 0; i < uniqueIds.length; i += concurrency) {
+          if (fetchVersionRef.current !== currentVersion || !isMounted.current) break;
           
-          const imgUrl = profile?.profile_picture_url || profile?.picture_url || profile?.avatar_url;
-          if (imgUrl) {
-            setProfilePictures(prev => ({
-              ...prev,
-              [id]: imgUrl
-            }));
-          }
-        } catch (e) {
-          // Falha silenciosa
+          const batch = uniqueIds.slice(i, i + concurrency);
+          await Promise.all(batch.map(async (id) => {
+            if (fetchVersionRef.current !== currentVersion || !isMounted.current) return;
+            try {
+              const profile = await getProfile(id, accountId);
+              if (fetchVersionRef.current !== currentVersion || !isMounted.current) return;
+              
+              const imgUrl = profile?.profile_picture_url || profile?.picture_url || profile?.avatar_url || null;
+              setProfilePictures(prev => ({
+                ...prev,
+                [id]: imgUrl
+              }));
+            } catch (e) {
+              // Marcar como processado (null) mesmo em caso de erro para evitar loop infinito
+              setProfilePictures(prev => ({
+                ...prev,
+                [id]: null
+              }));
+            }
+          }));
         }
+      } finally {
+        if (isMounted.current) setIsFetchingPictures(false);
       }
     };
 
-    if (!loading && (sentInvitations.length > 0 || receivedInvitations.length > 0)) {
-      fetchPictures();
+    if (!loading && !isFetchingPictures && (sentInvitations.length > 0 || receivedInvitations.length > 0)) {
+      const hasMissingPictures = [...sentInvitations, ...receivedInvitations].some(
+        inv => inv.invited_user_id && profilePictures[inv.invited_user_id] === undefined
+      );
+      if (hasMissingPictures) {
+        fetchPictures();
+      }
     }
-
-    return () => {
-      active = false;
-    };
-  }, [sentInvitations, receivedInvitations, currentAccount, loading]);
+  }, [sentInvitations, receivedInvitations, currentAccount, loading, isFetchingPictures]);
 
   const handleSearchProfile = async (overrideIdentifier?: string, overrideId?: string) => {
     const identifier = overrideIdentifier || newIdentifier;
@@ -225,7 +272,9 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
   };
 
   const handleAction = async (id: string, action: 'ACCEPT' | 'DECLINE' | 'CANCEL') => {
+    setLoading(true);
     setError(null);
+    setSuccess(null);
     try {
       if (action === 'CANCEL') {
         await cancelInvitation(id);
@@ -234,9 +283,10 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
         await handleInvitation(id, action);
         setSuccess(action === 'ACCEPT' ? 'Convite aceito!' : 'Convite recusado.');
       }
-      fetchData();
+      await fetchData();
     } catch (err) {
       setError('Erro ao processar ação.');
+      setLoading(false);
     }
   };
 
@@ -265,7 +315,24 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative min-h-[600px]">
+      {(loading || isFetchingPictures) && (
+        <div className="absolute inset-0 z-[100] bg-white/60 backdrop-blur-[2px] flex flex-col items-center justify-center rounded-xl transition-all duration-300">
+          <div className="bg-white p-8 rounded-2xl shadow-2xl border border-gray-100 flex flex-col items-center gap-4 animate-in zoom-in-95 duration-200">
+            <div className="relative">
+              <div className="w-12 h-12 border-4 border-brand-100 border-t-brand-600 rounded-full animate-spin"></div>
+              <RefreshCw className="w-5 h-5 text-brand-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+            </div>
+            <div className="text-center">
+              <p className="text-gray-900 font-bold text-lg">Aguarde um momento</p>
+              <p className="text-gray-500 text-sm mt-1">
+                {loading ? 'Sincronizando seus convites...' : 'Carregando fotos dos perfis...'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Enviar Novo Convite */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
         <div className="p-6 border-b border-gray-100">
@@ -472,9 +539,7 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
         {success && <div className="p-4 bg-green-50 text-green-600 text-sm border-b border-green-100">{success}</div>}
 
         <div className="divide-y divide-gray-100">
-          {loading ? (
-            <div className="p-8 text-center text-gray-500">Carregando convites...</div>
-          ) : (activeTab === 'received' ? receivedInvitations : sentInvitations).length === 0 ? (
+          {(activeTab === 'received' ? receivedInvitations : sentInvitations).length === 0 && !loading ? (
             <div className="p-12 text-center text-gray-500 flex flex-col items-center gap-3">
               <Clock className="w-8 h-8 text-gray-300" />
               <p>Nenhum convite {activeTab === 'received' ? 'recebido' : 'enviado'} encontrado.</p>
