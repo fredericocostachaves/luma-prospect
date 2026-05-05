@@ -71,12 +71,13 @@ Deno.serve(async (req) => {
 
     const expiresOn = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
+    const appUrl = Deno.env.get('APP_URL') || 'http://localhost:3000'
     const reqBody = {
       type: type || 'reconnect',
       providers: providers || ['LINKEDIN'],
       expiresOn: expiresOn,
-      success_redirect_url: successRedirectUrl || 'http://localhost:3000',
-      failure_redirect_url: failureRedirectUrl || 'http://localhost:3000',
+      success_redirect_url: successRedirectUrl || appUrl,
+      failure_redirect_url: failureRedirectUrl || appUrl,
       api_url: UNIPILE_API_URL,
       name: authenticatedUserId,
       notify_url: webhookUrl,

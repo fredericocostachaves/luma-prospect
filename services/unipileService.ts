@@ -1,4 +1,5 @@
 import supabase from '../utils/supabase'
+import { getAppUrl } from '../utils/urlUtils'
 
 const EDGE_FUNCTION_URL = import.meta.env.VITE_SUPABASE_EDGE_FUNCTIONS_URL || ''
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY || ''
@@ -61,7 +62,7 @@ export const getHostedAuthLink = async (userId?: string, successRedirectUrl?: st
   try {
     const url = getEdgeFunctionUrl('/unipile-accounts-link')
     const headers = await getAuthHeaders()
-    const body: Record<string, string> = { success_redirect_url: successRedirectUrl || window.location.origin }
+    const body: Record<string, string> = { success_redirect_url: successRedirectUrl || getAppUrl() }
     if (userId) {
       body.userId = userId
     }

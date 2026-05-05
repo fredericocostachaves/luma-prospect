@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Mail, Lock, LogIn, AlertCircle, UserPlus } from 'lucide-react';
 import { login, signUp } from '../services/authService';
 import supabase from '../utils/supabase';
+import { getRedirectUrl } from '../utils/urlUtils';
 
 interface LoginProps {
   onLoginSuccess: (userId: string, email: string) => void;
@@ -73,7 +74,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         setMode('login');
       } else {
         await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/reset-password`,
+          redirectTo: getRedirectUrl('/reset-password'),
         });
         setSuccessMessage('E-mail de redefinição enviado! Verifique sua caixa de entrada.');
         setMode('login');

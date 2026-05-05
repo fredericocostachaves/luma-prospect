@@ -44,7 +44,8 @@ Deno.serve(async (req) => {
     }
 
     const reqBodyData = await req.json() as { success_redirect_url?: string; userId?: string }
-    const successRedirectUrl = reqBodyData.success_redirect_url || 'http://localhost:3000'
+    const appUrl = Deno.env.get('APP_URL') || 'http://localhost:3000'
+    const successRedirectUrl = reqBodyData.success_redirect_url || appUrl
     const userId = reqBodyData.userId
 
     if (!userId) {

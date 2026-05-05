@@ -1,4 +1,5 @@
 import supabase from '../utils/supabase'
+import { getRedirectUrl } from '../utils/urlUtils'
 
 export interface LoginRequest {
   email: string
@@ -55,7 +56,10 @@ export const signUp = async (payload: LoginRequest): Promise<AuthResponse> => {
   try {
     const { data, error } = await supabase.auth.signUp({
       email: payload.email,
-      password: payload.password
+      password: payload.password,
+      options: {
+        emailRedirectTo: getRedirectUrl('/confirm-email')
+      }
     })
 
     if (error) {
