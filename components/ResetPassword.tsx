@@ -2,7 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Lock, Eye, EyeOff, Check, AlertCircle, Loader } from 'lucide-react';
 import supabase from '../utils/supabase';
 
-const ResetPassword: React.FC = () => {
+interface ResetPasswordProps {
+  onPasswordResetSuccess?: () => void;
+}
+
+const ResetPassword: React.FC<ResetPasswordProps> = ({ onPasswordResetSuccess }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -12,29 +16,27 @@ const ResetPassword: React.FC = () => {
   const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const checkToken = () => {
+    const checkToken = async () => {
+      await supabase.auth.signOut();
+      
       const params = new URLSearchParams(window.location.search);
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      const tokenParam = params.get('token');
-      const typeParam = params.get('type');
+      const tokenParam = params.get('token') || hashParams.get('access_token');
+      const typeParam = params.get('type') || hashParams.get('type');
       const errorParam = params.get('error') || hashParams.get('error');
+      const errorCode = params.get('error_code') || hashParams.get('error_code');
       const errorDescription = params.get('error_description') || hashParams.get('error_description');
 
-      if (errorParam || errorDescription) {
+      if ((errorParam || errorCode || errorDescription) && (errorCode === 'otp_expired' || errorParam === 'access_denied' || errorDescription?.includes('expired') || errorDescription?.includes('invalid'))) {
         setError('Link expirado ou inválido. Por favor, solicite um novo link.');
         setTimeout(() => {
-          window.location.href = '/?error=password_reset_failed';
+          window.location.href = '/';
         }, 3000);
         return;
       }
 
       if (typeParam === 'recovery' && tokenParam) {
         setToken(tokenParam);
-      } else {
-        setError('Link de recuperação inválido ou expirado');
-        setTimeout(() => {
-          window.location.href = '/?error=password_reset_failed';
-        }, 3000);
       }
     };
 
@@ -72,6 +74,9 @@ const ResetPassword: React.FC = () => {
       });
 
       setSuccess(true);
+      if (onPasswordResetSuccess) {
+        onPasswordResetSuccess();
+      }
     } catch (err: any) {
       setError(err.message || 'Erro ao redefinir senha');
     } finally {
@@ -96,7 +101,7 @@ const ResetPassword: React.FC = () => {
             href="/"
             className="inline-flex items-center justify-center gap-2 py-3 px-6 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-all"
           >
-            Ir para Login
+            Entrar no sistema
           </a>
         </div>
       </div>

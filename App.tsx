@@ -119,7 +119,8 @@ const App: React.FC = () => {
   // Inbox State
   const [chats, setChats] = useState<UnipileChatsResponse | null>(null);
 
-  const isResetPasswordPage = window.location.pathname === '/reset-password' || window.location.search.includes('type=recovery');
+  const isResetPasswordPage = window.location.pathname === '/reset-password' || window.location.search.includes('type=recovery') || window.location.hash.includes('type=recovery');
+  const [forceResetPassword, setForceResetPassword] = useState(false);
 
   useEffect(() => {
     const initAuth = async () => {
@@ -277,10 +278,11 @@ const App: React.FC = () => {
     setIsAuthenticated(true);
   };
 
+  if (isResetPasswordPage || forceResetPassword) {
+    return <ResetPassword onPasswordResetSuccess={() => setForceResetPassword(false)} />;
+  }
+
   if (!isAuthenticated || !currentUserId) {
-    if (isResetPasswordPage) {
-      return <ResetPassword />;
-    }
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 

@@ -73,14 +73,32 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         setSuccessMessage(response.message || 'Cadastro realizado com sucesso!');
         setMode('login');
       } else {
-        await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: getRedirectUrl('/reset-password'),
-        });
-        setSuccessMessage('E-mail de redefinição enviado! Verifique sua caixa de entrada.');
-        setMode('login');
+        try {
+          const { error } = await supabase.auth.resetPasswordForEmail(email, {
+            redirectTo: getRedirectUrl('/reset-password'),
+          });
+          if (error) {
+            const errorMsg = error.message || JSON.stringify(error);
+            if (error.status === 429 || errorMsg.includes('rate limit') || errorMsg.includes('too many') || errorMsg.includes('429')) {
+              setError('Limite de envio de e-mails por hora alcançado. Tente novamente na próxima hora.');
+            } else {
+              setError(errorMsg);
+            }
+          } else {
+            setSuccessMessage('E-mail de redefinição enviado! Verifique sua caixa de entrada.');
+            setMode('login');
+          }
+        } catch (err: any) {
+          const errorMsg = err.message || err.error_description || JSON.stringify(err);
+          if (err.status === 429 || errorMsg.includes('rate limit') || errorMsg.includes('too many') || errorMsg.includes('429')) {
+            setError('Limite de envio de e-mails por hora alcançado. Tente novamente na próxima hora.');
+          } else {
+            setError(errorMsg || 'Erro ao processar solicitação');
+          }
+        } finally {
+          setLoading(false);
+        }
       }
-    } catch (err: any) {
-      setError(err.message || 'Erro ao processar solicitação');
     } finally {
       setLoading(false);
     }
