@@ -53,11 +53,15 @@ const App: React.FC = () => {
   const fetchAccounts = async (userId: string) => {
     setIsAppLoading(true);
     try {
-      const { data: linkedAccounts} = await (supabase as any)
+      const { data: linkedAccounts, error: accountsError } = await (supabase as any)
         .from('accounts')
         .select('id, unipile_account_id, name, status, initials')
         .eq('user_id', userId)
         .order('created_at', { ascending: true });
+      
+      if (accountsError) {
+        console.error('Erro na query de accounts:', accountsError);
+      }
 
       if (linkedAccounts && linkedAccounts.length > 0) {
         const accountsToDisplay: Account[] = [];
@@ -111,6 +115,7 @@ const App: React.FC = () => {
         setCurrentAccount(null);
       }
     } catch (err) {
+      console.error('Erro ao buscar contas:', err);
     } finally {
       setIsAppLoading(false);
     }
@@ -118,6 +123,7 @@ const App: React.FC = () => {
 
   // Inbox State
   const [chats, setChats] = useState<UnipileChatsResponse | null>(null);
+  const [chatRefreshKey, setChatRefreshKey] = useState(0);
 
   const isResetPasswordPage = window.location.pathname === '/reset-password' || window.location.search.includes('type=recovery') || window.location.hash.includes('type=recovery');
   const [forceResetPassword, setForceResetPassword] = useState(false);
@@ -208,7 +214,11 @@ const App: React.FC = () => {
       };
       void fetchChats();
     }
-  }, [activeTab, currentAccount]);
+  }, [activeTab, currentAccount, chatRefreshKey]);
+
+  const handleChatCreated = () => {
+    setChatRefreshKey(k => k + 1);
+  };
 
   const handleAddAccount = async (newAccount: any) => {
     if (!currentUserId) {
@@ -481,7 +491,7 @@ const App: React.FC = () => {
             )}
             {activeTab === Tab.INBOX && (
               <Suspense fallback={<div className="flex items-center justify-center h-96 text-gray-500">Carregando...</div>}>
-                <Inbox chatsData={chats} currentAccount={currentAccount} />
+                <Inbox chatsData={chats} currentAccount={currentAccount} onChatCreated={handleChatCreated} />
               </Suspense>
             )}
             {activeTab === Tab.PIPELINE && (

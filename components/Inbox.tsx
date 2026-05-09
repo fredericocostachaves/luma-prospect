@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Check, X, MessageSquare, Clock } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Check, X, MessageSquare, Clock, Plus, Search, User } from 'lucide-react';
 import { UnipileChatsResponse, UnipileChat, getChatMessages, getChatAttendee } from '../services/unipileService';
 
 const formatTimeAgo = (dateString?: string): string => {
@@ -37,22 +37,18 @@ interface InboxProps {
     unipile_account_id?: string | null;
     name: string;
   } | null;
+  onChatCreated?: () => void;
 }
 
 import ChatView from './ChatView';
-import { sendConnectRequest } from '../services/unipileService';
-import {availableParallelism} from "node:os";
 
-const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount }) => {
+const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount}) => {
   const [messages, setMessages] = useState<InboxMessageData[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
-  const [showConnectModal, setShowConnectModal] = useState(false);
-  const [connectAttendeeId, setConnectAttendeeId] = useState<string | null>(null);
-  const [connectMessage, setConnectMessage] = useState('');
-  const [connectLoading, setConnectLoading] = useState(false);
-  const [connectSuccess, setConnectSuccess] = useState(false);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [newChatSearch, setNewChatSearch] = useState('');
 
   useEffect(() => {
     const transformChats = async () => {
@@ -107,7 +103,33 @@ const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount }) => {
     void transformChats();
   }, [chatsData, currentAccount]);
 
+  const contacts = useMemo(() => {
+    const seen = new Set<string>();
+    return messages.filter(msg => {
+      const key = msg.name.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).map(msg => ({
+      name: msg.name,
+      title: msg.company,
+      avatarUrl: msg.avatarUrl || '',
+      chatId: msg.chatId,
+    }));
+  }, [messages]);
+
+  const filteredContacts = useMemo(() => {
+    if (!newChatSearch.trim()) return contacts;
+    const q = newChatSearch.toLowerCase();
+    return contacts.filter(c => c.name.toLowerCase().includes(q));
+  }, [contacts, newChatSearch]);
+
   const unreadCount = messages.filter(m => m.unread).length;
+
+  const handleContactSelect = (contact: { chatId: string }) => {
+    setShowNewChatModal(false);
+    setSelectedChatId(contact.chatId);
+  };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden min-h-[500px]">
@@ -117,6 +139,10 @@ const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount }) => {
           <p className="text-sm text-gray-500">{messages.length} conversas ativas • {unreadCount} não lidas</p>
         </div>
         <div className="flex gap-2">
+            <button onClick={() => setShowNewChatModal(true)} className="flex items-center gap-1.5 px-4 py-1.5 bg-brand-600 text-white text-xs font-bold rounded-lg hover:bg-brand-700 transition-colors shadow-sm">
+                <Plus className="w-3.5 h-3.5" />
+                Novo Chat
+            </button>
             <span className="flex items-center gap-1 bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1.5 rounded-full">
                 {unreadCount} Prioritários
             </span>
@@ -204,7 +230,72 @@ const Inbox: React.FC<InboxProps> = ({ chatsData, currentAccount }) => {
           <ChatView chatId={selectedChatId} currentAccount={currentAccount} onClose={() => setSelectedChatId(null)} />
         )}
       </div>
-      
+
+      {showNewChatModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50" onClick={() => setShowNewChatModal(false)}>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900">Novo Chat</h3>
+              <button onClick={() => setShowNewChatModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={newChatSearch}
+                    onChange={e => setNewChatSearch(e.target.value)}
+                    placeholder="Buscar contato..."
+                    className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                  />
+                </div>
+                {filteredContacts.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 text-sm">
+                    {contacts.length === 0 ? 'Nenhum contato encontrado nas conversas existentes.' : 'Nenhum contato encontrado para essa busca.'}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {filteredContacts.map(contact => (
+                      <button
+                        key={contact.chatId}
+                        onClick={() => handleContactSelect(contact)}
+                        className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                      >
+                        {contact.avatarUrl ? (
+                          <img src={contact.avatarUrl} alt="" className="w-10 h-10 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-10 h-10 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center">
+                            <User className="w-5 h-5" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{contact.name}</p>
+                          {contact.title && <p className="text-xs text-gray-500 truncate">{contact.title}</p>}
+                        </div>
+                        <MessageSquare className="w-4 h-4 text-gray-400 shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setShowNewChatModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Load More / Footer */}
       <div className="p-4 bg-gray-50 text-center border-t border-gray-100">
           <button className="text-sm font-semibold text-gray-500 hover:text-brand-600 transition-colors">
