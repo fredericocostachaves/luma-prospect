@@ -1,5 +1,5 @@
 import supabase from '../utils/supabase'
-import { getAppUrl } from '../utils/urlUtils'
+import {getAppUrl} from '../utils/urlUtils'
 
 const EDGE_FUNCTION_URL = import.meta.env.VITE_SUPABASE_EDGE_FUNCTIONS_URL || ''
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY || ''
@@ -114,7 +114,7 @@ export interface UnipileAccount {
   type: string
   sources: Array<{
     type: string
-    status: string
+  status?: string
     id: string
   }>
   created_at: string
@@ -332,8 +332,7 @@ export const listChats = async (params?: ListChatsParams): Promise<UnipileChatsR
       body: JSON.stringify(body)
     })
 
-    const data = await parseJsonResponse(response)
-    return data
+    return await parseJsonResponse(response)
   } catch (error) {
     throw error
   }
@@ -352,8 +351,7 @@ export const getChatMessages = async (chatId: string, accountId?: string): Promi
       headers
     })
 
-    const data = await parseJsonResponse(response)
-    return data
+    return await parseJsonResponse(response)
   } catch (error) {
     throw error
   }
@@ -559,9 +557,22 @@ export interface UnipileInvitation {
   invited_user?: string
   invited_user_description?: string
   invited_user_id?: string
+  invited_user_public_id?: string
+  invitation_text?: string
   attendee?: UnipileChatAttendee
   recipient?: UnipileChatAttendee
   sender?: UnipileChatAttendee
+  inviter?: {
+    inviter_name?: string
+    inviter_id?: string
+    inviter_public_identifier?: string
+    inviter_description?: string
+    inviter_profile_picture_url?: string
+  }
+  specifics?: {
+    provider?: string
+    shared_secret?: string
+  }
 }
 
 export interface ListInvitationsResponse {
@@ -616,13 +627,19 @@ export const sendInvitation = async (payload: SendInvitationRequest): Promise<an
   }
 }
 
-export const handleInvitation = async (invitationId: string, action: 'ACCEPT' | 'DECLINE'): Promise<any> => {
+export const handleInvitation = async (invitationId: string, action: 'accept' | 'decline', accountId: string, sharedSecret: string): Promise<any> => {
   try {
     const headers = await getAuthHeaders()
+    const body: Record<string, any> = {
+      action,
+      provider: 'LINKEDIN',
+      account_id: accountId,
+      shared_secret: sharedSecret,
+    }
     const response = await fetch(getEdgeFunctionUrl(`/unipile-invitations-handle?invitationId=${encodeURIComponent(invitationId)}`), {
       method: 'POST',
       headers,
-      body: JSON.stringify({ action })
+      body: JSON.stringify(body)
     })
     return await parseJsonResponse(response)
   } catch (error) {

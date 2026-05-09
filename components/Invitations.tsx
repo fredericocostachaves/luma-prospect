@@ -125,13 +125,15 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
 
     const fetchPictures = async () => {
       if (!currentAccount || loading || isFetchingPictures) return;
-      
-      const allInvs = [...sentInvitations, ...receivedInvitations];
-      
-      // Filtrar IDs que ainda não temos no cache de imagens (undefined significa que não tentamos)
-      const idsToFetch = allInvs
+// Filtrar IDs que ainda não temos no cache de imagens (undefined significa que não tentamos)
+      // API Unipile: convites recebidos têm inviter (quem enviou); enviados têm invited_user (o destinatário)
+      const sentIds = sentInvitations
         .map(inv => inv.invited_user_id)
         .filter((id): id is string => !!id && profilePictures[id] === undefined);
+      const receivedIds = receivedInvitations
+        .map(inv => inv.inviter?.inviter_id)
+        .filter((id): id is string => !!id && profilePictures[id] === undefined);
+      const idsToFetch = [...sentIds, ...receivedIds];
 
       if (idsToFetch.length === 0) {
         return;
@@ -176,9 +178,9 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
     };
 
     if (!loading && !isFetchingPictures && (sentInvitations.length > 0 || receivedInvitations.length > 0)) {
-      const hasMissingPictures = [...sentInvitations, ...receivedInvitations].some(
-        inv => inv.invited_user_id && profilePictures[inv.invited_user_id] === undefined
-      );
+      const hasMissingPictures =
+        sentInvitations.some(inv => inv.invited_user_id && profilePictures[inv.invited_user_id] === undefined) ||
+        receivedInvitations.some(inv => inv.inviter?.inviter_id && profilePictures[inv.inviter.inviter_id] === undefined);
       if (hasMissingPictures) {
         fetchPictures();
       }
@@ -265,27 +267,36 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
       setSearchResults([]);
       fetchData();
     } catch (err) {
-      setError('Erro ao enviar convite. Verifique o identificador.');
+      const msg = (err as Error).message;
+      if (msg.includes('already_invited_recently')) {
+        setError('Um convite já foi enviado recentemente para esse contato. Tente novamente mais tarde.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setIsSending(false);
     }
   };
 
-  const handleAction = async (id: string, action: 'ACCEPT' | 'DECLINE' | 'CANCEL') => {
+  const handleAction = async (invite: UnipileInvitation, action: 'ACCEPT' | 'DECLINE' | 'CANCEL') => {
     setLoading(true);
     setError(null);
     setSuccess(null);
     try {
       if (action === 'CANCEL') {
-        await cancelInvitation(id);
+        await cancelInvitation(invite.id);
         setSuccess('Convite cancelado.');
       } else {
-        await handleInvitation(id, action);
+        const accountId = currentAccount?.unipile_account_id || currentAccount?.id || invite.account_id;
+        const sharedSecret = invite.specifics?.shared_secret;
+        if (!sharedSecret) console.warn('[Invitations] shared_secret missing:', JSON.stringify(invite));
+        await handleInvitation(invite.id, action === 'ACCEPT' ? 'accept' : 'decline', accountId, sharedSecret || '');
         setSuccess(action === 'ACCEPT' ? 'Convite aceito!' : 'Convite recusado.');
       }
       await fetchData();
     } catch (err) {
-      setError('Erro ao processar ação.');
+      const message = (err as Error).message;
+      setError(message);
       setLoading(false);
     }
   };
@@ -547,23 +558,29 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
           ) : (
             (activeTab === 'received' ? receivedInvitations : sentInvitations).map((inv) => {
               const attendee = inv.attendee || (activeTab === 'sent' ? inv.recipient : inv.sender);
-              
               // Extração robusta do nome
-              let displayName = 'Usuário';
-              if (inv.invited_user && typeof inv.invited_user === 'object') {
-                displayName = (inv.invited_user as any).display_name || (inv.invited_user as any).name || (inv.invited_user as any).full_name || displayName;
-              } else if (typeof inv.invited_user === 'string' && inv.invited_user) {
-                displayName = inv.invited_user;
-              } else if (attendee?.display_name) {
-                displayName = attendee.display_name;
-              } else if (activeTab === 'sent') {
-                displayName = inv.invited_user_id || inv.recipient_id || displayName;
+              let displayName = '';
+              if (activeTab === 'received') {
+                // API Unipile: convites recebidos usam "inviter" para quem enviou
+                displayName = inv.inviter?.inviter_name || attendee?.display_name || attendee?.name || attendee?.title || inv.inviter?.inviter_id || 'Usuário';
               } else {
-                displayName = inv.invited_user_id || inv.sender_id || displayName;
+                // API Unipile: convites enviados usam "invited_user" para o destinatário
+                if (inv.invited_user && typeof inv.invited_user === 'object') {
+                  displayName = (inv.invited_user as any).display_name || (inv.invited_user as any).name || (inv.invited_user as any).full_name || displayName;
+                } else if (typeof inv.invited_user === 'string' && inv.invited_user) {
+                  displayName = inv.invited_user;
+                } else if (attendee?.display_name) {
+                  displayName = attendee.display_name;
+                } else {
+                  displayName = inv.invited_user_id || inv.recipient_id || 'Usuário';
+                }
               }
 
               // Extração robusta da imagem
-              const pictureUrl = (inv.invited_user_id && profilePictures[inv.invited_user_id]) ||
+              // API Unipile: recebidos têm inviter.inviter_profile_picture_url; enviados dependem de invited_user_id
+              const pictureKey = activeTab === 'received' ? inv.inviter?.inviter_id : inv.invited_user_id;
+              const pictureUrl = (activeTab === 'received' ? inv.inviter?.inviter_profile_picture_url : null) ||
+                               (pictureKey && profilePictures[pictureKey]) ||
                                attendee?.picture_url || 
                                attendee?.profile_picture_url || 
                                attendee?.avatar_url || 
@@ -608,13 +625,15 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
                         {description && (
                           <span className="text-[10px] text-gray-400 truncate hidden sm:inline">{description}</span>
                         )}
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                          inv.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                          inv.status === 'ACCEPTED' ? 'bg-green-100 text-green-700' :
-                          'bg-gray-100 text-gray-600'
-                        }`}>
-                          {inv.status}
-                        </span>
+                        {inv.status && (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                            inv.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+                            inv.status === 'ACCEPTED' ? 'bg-green-100 text-green-700' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>
+                            {inv.status}
+                          </span>
+                        )}
                       </div>
                       {inv.message && <p className="text-sm text-gray-600 mt-1 line-clamp-1 italic">"{inv.message}"</p>}
                       <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
@@ -624,28 +643,28 @@ const Invitations: React.FC<InvitationsProps> = ({ currentAccount }) => {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {activeTab === 'received' && inv.status === 'PENDING' && (
+                  <div className="flex items-center gap-2">
+                    {activeTab === 'received' && (
                       <>
-                        <button
-                          onClick={() => handleAction(inv.id, 'ACCEPT')}
-                          className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors"
-                          title="Aceitar"
-                        >
-                          <Check className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleAction(inv.id, 'DECLINE')}
-                          className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
-                          title="Recusar"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
+                          <button
+                            onClick={() => handleAction(inv, 'ACCEPT')}
+                            className="p-2 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition-colors"
+                            title="Aceitar"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleAction(inv, 'DECLINE')}
+                            className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                            title="Recusar"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                       </>
                     )}
                     {activeTab === 'sent' && inv.status === 'PENDING' && (
                       <button
-                        onClick={() => handleAction(inv.id, 'CANCEL')}
+                        onClick={() => handleAction(inv, 'CANCEL')}
                         className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-xs font-medium"
                       >
                         <X className="w-3 h-3" />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, Plus, Columns, UserPlus, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, Plus, Columns, UserPlus, RefreshCw, Check } from 'lucide-react';
 import { supabase } from './utils/supabase';
 import { Database } from './database.types';
 import { listChats, UnipileChatsResponse, syncLinkedInAccount, getAccountById, getAccountOwner } from './services/unipileService';
@@ -169,11 +169,11 @@ const App: React.FC = () => {
   // Sincronizar conta quando retornar do Unipile com account_id
   useEffect(() => {
     if (!currentUserId || !isAuthenticated) return;
-    
+
     const params = new URLSearchParams(window.location.search);
     const accountId = params.get('account_id');
     const isNewConnection = params.get('flow') === 'new_connection';
-    
+
     if (accountId && !params.has('reconnect') && !syncedAccountIds.has(accountId) && !isNewConnection) {
       const syncAndRefresh = async () => {
         try {
@@ -190,6 +190,7 @@ const App: React.FC = () => {
           cleanUrl.searchParams.delete('reconnect');
           window.history.replaceState({}, '', cleanUrl.toString());
         } catch (err) {
+          console.error('Erro ao sincronizar conta:', err);
         }
       };
       syncAndRefresh();
@@ -244,12 +245,6 @@ const App: React.FC = () => {
     const accountExists = accounts.some(a => a.id === formattedAccount.id);
     if (accountExists) {
       alert('Esta conta já está vinculada. Remova-a primeiro se quiser reconectá-la.');
-      return;
-    }
-
-    // Verificar se usuário já tem uma conta vinculada
-    if (accounts.length >= 1) {
-      alert('Você já possui uma conta vinculada. Remova-a primeiro para adicionar outra.');
       return;
     }
 
@@ -359,61 +354,82 @@ const App: React.FC = () => {
           <div className="mt-auto pt-4 border-t border-gray-100 space-y-2">
             
             {/* Account Selector */}
-            {accounts.length === 0 ? (
-              // No account: show simple connect button
-              <button 
-                onClick={() => {
-                  setReconnectAccountId(undefined);
-                  const url = new URL(window.location.href);
-                  url.searchParams.set('flow', 'new_connection');
-                  window.history.replaceState({}, '', url.toString());
-                  setIsAuthModalOpen(true);
-                }}
-                className="w-full p-3 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors text-left flex items-center gap-3"
-              >
-                <div className="w-8 h-8 border border-dashed border-gray-300 rounded-full flex items-center justify-center">
-                  <Plus className="w-4 h-4 text-gray-400" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-700">Conectar Conta</p>
-                  <p className="text-xs text-gray-400">Clique para vincular seu LinkedIn</p>
-                </div>
-              </button>
-            ) : (
-              // Has account
-              <div className="w-full p-3 bg-gray-50 rounded-xl border border-gray-200 text-left">
-                <div className="flex items-center gap-3">
-                  {currentAccount?.avatar_url ? (
-                    <img 
-                      src={currentAccount.avatar_url} 
-                      alt={currentAccount.name} 
-                      className="w-8 h-8 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xs">
-                      {currentAccount?.initials || 'LI'}
-                    </div>
-                  )}
-                  <div className="flex-1 overflow-hidden">
-                    <p className="text-sm font-semibold text-gray-700 truncate">{currentAccount?.name || currentAccount?.unipile_account_id || 'Nenhuma conta'}</p>
-                     <p className={`text-xs ${currentAccount?.status === 'CREATION_SUCCESS' ? 'text-green-600' : currentAccount?.status === 'RECONNECTED' ? 'text-yellow-600' : 'text-gray-500'}`}>
-                       {currentAccount?.status === 'CREATION_SUCCESS' ? 'Ativo' : currentAccount?.status === 'RECONNECTED' ? 'Reconectado' : 'Não sincronizado'}
-                     </p>
+            <div className="space-y-1">
+              {accounts.length === 0 ? (
+                <button 
+                  onClick={() => {
+                    setReconnectAccountId(undefined);
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('flow', 'new_connection');
+                    window.history.replaceState({}, '', url.toString());
+                    setIsAuthModalOpen(true);
+                  }}
+                  className="w-full p-3 bg-gray-50 hover:bg-gray-100 rounded-xl border border-gray-200 transition-colors text-left flex items-center gap-3"
+                >
+                  <div className="w-8 h-8 border border-dashed border-gray-300 rounded-full flex items-center justify-center">
+                    <Plus className="w-4 h-4 text-gray-400" />
                   </div>
-                  {currentAccount?.status !== 'CREATION_SUCCESS' && (
-                    <button 
-                      onClick={() => {
-                        setReconnectAccountId(currentAccount?.id);
-                        setIsAuthModalOpen(true);
-                      }}
-                      className="px-2 py-1 bg-white border border-red-200 text-red-600 text-[10px] font-bold rounded-md hover:bg-red-50"
-                    >
-                      Reconectar
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-700">Conectar Conta</p>
+                    <p className="text-xs text-gray-400">Clique para vincular seu LinkedIn</p>
+                  </div>
+                </button>
+              ) : (
+                <>
+                  <div className="space-y-0.5">
+                    {accounts.map(acc => (
+                      <button
+                        key={acc.id}
+                        onClick={() => {
+                          setCurrentAccount(acc);
+                          setChats(null);
+                          setChatRefreshKey(k => k + 1);
+                        }}
+                        className={`w-full flex items-center gap-2.5 p-2.5 rounded-xl transition-colors text-left ${
+                          currentAccount?.id === acc.id
+                            ? 'bg-brand-50 ring-1 ring-brand-200'
+                            : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        {acc.avatar_url ? (
+                          <img src={acc.avatar_url} alt={acc.name} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                        ) : (
+                          <div className="w-7 h-7 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0">
+                            {acc.initials || 'LI'}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs truncate ${currentAccount?.id === acc.id ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>
+                            {acc.name || acc.unipile_account_id || 'Sem nome'}
+                          </p>
+                          <p className={`text-[10px] ${acc.status === 'CREATION_SUCCESS' ? 'text-green-600' : 'text-yellow-600'}`}>
+                            {acc.status === 'CREATION_SUCCESS' ? 'Ativo' : 'Reconectado'}
+                          </p>
+                        </div>
+                        {currentAccount?.id === acc.id && (
+                          <Check className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setReconnectAccountId(undefined);
+                      const url = new URL(window.location.href);
+                      url.searchParams.set('flow', 'new_connection');
+                      window.history.replaceState({}, '', url.toString());
+                      setIsAuthModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2.5 p-2.5 rounded-xl hover:bg-gray-50 transition-colors text-left text-xs font-medium text-gray-500 hover:text-gray-700"
+                  >
+                    <div className="w-7 h-7 border border-dashed border-gray-300 rounded-full flex items-center justify-center shrink-0">
+                      <Plus className="w-3.5 h-3.5" />
+                    </div>
+                    Conectar outra conta
+                  </button>
+                </>
+              )}
+            </div>
 
             <button className="flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-xl">
               <Settings className="w-4.5 h-4.5 text-gray-400" />

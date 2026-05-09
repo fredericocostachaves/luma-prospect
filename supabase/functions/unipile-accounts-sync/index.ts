@@ -27,21 +27,25 @@ Deno.serve(async (req) => {
       })
     }
 
-    const url = `${UNIPILE_API_URL}/api/v1/accounts/${accountId}/sync`
-
-    const headers = {
-      'X-API-KEY': UNIPILE_API_KEY,
-      'Content-Type': 'application/json',
-      'accept': 'application/json',
+    // Tenta sincronizar com Unipile (não crítico — falha não impede o cadastro)
+    let syncError: string | null = null;
+    try {
+      const syncUrl = `${UNIPILE_API_URL}/api/v1/accounts/${accountId}/sync`
+      const syncHeaders = {
+        'X-API-KEY': UNIPILE_API_KEY,
+        'Content-Type': 'application/json',
+        'accept': 'application/json',
+      }
+      const syncRes = await fetch(syncUrl, { method: 'POST', headers: syncHeaders })
+      if (!syncRes.ok) {
+        const syncBody = await syncRes.text()
+        syncError = `Sync failed: ${syncRes.status} - ${syncBody}`
+      }
+    } catch (syncErr) {
+      syncError = `Sync error: ${(syncErr as Error).message}`
     }
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-    })
-
-    const data = await response.json()
-
+    // Cadastra ou atualiza no Supabase independente do resultado do sync
     if (userId) {
       const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/accounts?id=eq.${encodeURIComponent(accountId)}`, {
         headers: {
@@ -79,8 +83,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify(data), {
-      status: response.status,
+    return new Response(JSON.stringify({ success: true, syncError }), {
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   } catch (error) {
