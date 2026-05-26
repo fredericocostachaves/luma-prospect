@@ -19,6 +19,7 @@ export type Database = {
           initials: string | null
           proxy_settings: Json | null
           created_at: string
+          updated_at: string | null
         }
         Insert: {
           id?: string
@@ -29,6 +30,7 @@ export type Database = {
           initials?: string | null
           proxy_settings?: Json | null
           created_at?: string
+          updated_at?: string | null
         }
         Update: {
           id?: string
@@ -39,6 +41,7 @@ export type Database = {
           initials?: string | null
           proxy_settings?: Json | null
           created_at?: string
+          updated_at?: string | null
         }
       }
       campaigns: {

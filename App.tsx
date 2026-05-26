@@ -49,13 +49,13 @@ const App: React.FC = () => {
   // Account State
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
-// Função para buscar contas
+  // Função para buscar contas
   const fetchAccounts = async (userId: string) => {
     setIsAppLoading(true);
     try {
       const { data: linkedAccounts, error: accountsError } = await (supabase as any)
         .from('accounts')
-        .select('id, unipile_account_id, name, status, initials')
+        .select('id, unipile_account_id, name, status, initials, updated_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: true });
       
@@ -75,9 +75,19 @@ const App: React.FC = () => {
           if (acc.unipile_account_id) {
             const unipileData = await getAccountById(acc.unipile_account_id);
             if (unipileData) {
-              if (!accountName || accountName.trim() === '') {
+              if (!accountName || accountName.trim() === '' || accountName !== unipileData.name) {
+                const oldName = accountName;
+                const oldInitials = accountInitials;
                 accountName = unipileData.name;
                 accountInitials = (accountName.substring(0, 2) || 'LI').toUpperCase();
+                
+                // Update DB if data changed
+                if (oldName !== accountName || oldInitials !== accountInitials) {
+                    await (supabase as any)
+                    .from('accounts')
+                    .update({ name: accountName, initials: accountInitials, updated_at: new Date().toISOString() })
+                    .eq('id', acc.id);
+                }
               }
               
               // Buscar o perfil do dono para pegar a imagem correta
