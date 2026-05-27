@@ -123,21 +123,36 @@ export interface UnipileAccount {
 }
 
 export const getAccountById = async (accountId: string): Promise<UnipileAccount | null> => {
-  try {
-    const headers = await getAuthHeaders()
-    const response = await fetch(getEdgeFunctionUrl(`/unipile-accounts/${accountId}`), {
-      method: 'GET',
-      headers
-    })
-    
-    if (!response.ok) {
-      return null
+  const MAX_RETRIES = 1;
+  let attempt = 0;
+
+  while (attempt <= MAX_RETRIES) {
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(getEdgeFunctionUrl(`/unipile-accounts/${accountId}`), {
+        method: 'GET',
+        headers
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      
+      console.error(`Error fetching account ${accountId}: ${response.status} ${response.statusText}`);
+      
+      if (response.status === 503 && attempt < MAX_RETRIES) {
+        attempt++;
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error(`Caught error fetching account ${accountId}:`, error);
+      return null;
     }
-    
-    return await response.json()
-  } catch (error) {
-    return null
   }
+  return null;
 }
 
 export interface UnipileAccountOwner {

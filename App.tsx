@@ -28,7 +28,7 @@ interface Account {
   id: string;
   unipile_account_id?: string | null;
   name: string;
-  status: 'CREATION_SUCCESS' | 'RECONNECTED';
+  status: 'CREATION_SUCCESS' | 'RECONNECTED' | 'DISCONNECTED';
   initials: string;
   avatar_url?: string;
 }
@@ -70,11 +70,13 @@ const App: React.FC = () => {
           let accountName = acc.name;
           let accountInitials = acc.initials;
           let avatarUrl = '';
+          let unipileData: any = null;
           
           // Se não tem name, buscar no Unipile
           if (acc.unipile_account_id) {
-            const unipileData = await getAccountById(acc.unipile_account_id);
+            unipileData = await getAccountById(acc.unipile_account_id);
             if (unipileData) {
+              console.log('DEBUG: unipileData:', JSON.stringify(unipileData));
               if (!accountName || accountName.trim() === '' || accountName !== unipileData.name) {
                 const oldName = accountName;
                 const oldInitials = accountInitials;
@@ -108,11 +110,14 @@ const App: React.FC = () => {
             accountInitials = (firstInitial + (lastInitial || firstInitial)).toUpperCase() || 'LI';
           }
           
+          const linkedinSource = unipileData?.sources?.find((s: any) => s.type?.toUpperCase().includes('LINKEDIN'));
+          const isDisconnected = linkedinSource?.status?.toUpperCase() === 'DISCONNECTED';
+
           accountsToDisplay.push({
             id: acc.id,
             unipile_account_id: acc.unipile_account_id || '',
             name: accountName || '',
-            status: acc.status || 'CREATION_SUCCESS',
+            status: (acc.unipile_account_id && isDisconnected ? 'DISCONNECTED' : acc.status) as 'CREATION_SUCCESS' | 'RECONNECTED' | 'DISCONNECTED',
             initials: accountInitials || 'LI',
             avatar_url: avatarUrl
           });
@@ -241,7 +246,7 @@ const App: React.FC = () => {
       id: newAccount.id,
       unipile_account_id: newAccount.unipile_account_id || newAccount.id,
       name: newAccount.name,
-      status: newAccount.status as 'CREATION_SUCCESS' | 'RECONNECTED',
+      status: newAccount.status as 'CREATION_SUCCESS' | 'RECONNECTED' | 'DISCONNECTED',
       initials: newAccount.initials || (() => {
         const nameParts = (newAccount.name || '').trim().split(/\s+/);
         const firstInitial = nameParts[0]?.[0] || '';
@@ -265,7 +270,7 @@ const App: React.FC = () => {
         id: formattedAccount.id,
         unipile_account_id: formattedAccount.unipile_account_id,
         name: formattedAccount.name,
-        status: formattedAccount.status,
+        status: (formattedAccount.status === 'DISCONNECTED' ? 'CREATION_SUCCESS' : formattedAccount.status) as 'CREATION_SUCCESS' | 'RECONNECTED',
         initials: formattedAccount.initials,
         user_id: currentUserId,
         proxy_settings: newAccount.proxy_settings || null
@@ -412,8 +417,8 @@ const App: React.FC = () => {
                           <p className={`text-xs truncate ${currentAccount?.id === acc.id ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>
                             {acc.name || acc.unipile_account_id || 'Sem nome'}
                           </p>
-                          <p className={`text-[10px] ${acc.status === 'CREATION_SUCCESS' ? 'text-green-600' : 'text-yellow-600'}`}>
-                            {acc.status === 'CREATION_SUCCESS' ? 'Ativo' : 'Reconectado'}
+                          <p className={`text-[10px] ${acc.status === 'CREATION_SUCCESS' ? 'text-green-600' : acc.status === 'DISCONNECTED' ? 'text-red-600' : 'text-yellow-600'}`}>
+                            {acc.status === 'CREATION_SUCCESS' ? 'Ativo' : acc.status === 'DISCONNECTED' ? 'Desconectado' : 'Reconectado'}
                           </p>
                         </div>
                         {currentAccount?.id === acc.id && (

@@ -49,7 +49,7 @@ interface AccountFromApp {
   id: string;
   unipile_account_id?: string | null;
   name: string;
-  status: 'CREATION_SUCCESS' | 'RECONNECTED';
+  status: 'CREATION_SUCCESS' | 'RECONNECTED' | 'DISCONNECTED';
   initials: string;
   avatar_url?: string;
 }
@@ -66,7 +66,8 @@ const Dashboard: React.FC<DashboardProps> = ({ accounts = [] }) => {
     // Map status from App strings to Dashboard status keys
     const statusMap: Record<string, 'active' | 'restricted' | 'disconnected'> = {
       'CREATION_SUCCESS': 'active',
-      'RECONNECTED': 'disconnected'
+      'RECONNECTED': 'disconnected',
+      'DISCONNECTED': 'disconnected'
     };
 
     // Default performance data for accounts
