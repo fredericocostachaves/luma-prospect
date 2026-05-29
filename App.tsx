@@ -2,7 +2,7 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, Plus, Columns, UserPlus, RefreshCw, Check } from 'lucide-react';
 import { supabase } from './utils/supabase';
 import { Database } from './database.types';
-import { listChats, UnipileChatsResponse, syncLinkedInAccount, getAccountById, getAccountOwner } from './services/unipileService';
+import { listChats, UnipileChatsResponse, syncLinkedInAccount, getAccountById, getAccountOwner, deleteAccount, UnipileAuthError, updateAccountUnipileId } from './services/unipileService';
 import Login from './components/Login';
 import ResetPassword from './components/ResetPassword';
 
@@ -74,7 +74,17 @@ const App: React.FC = () => {
           
           // Se não tem name, buscar no Unipile
           if (acc.unipile_account_id) {
-            unipileData = await getAccountById(acc.unipile_account_id);
+            try {
+              unipileData = await getAccountById(acc.unipile_account_id);
+            } catch (err) {
+              if (err instanceof UnipileAuthError) {
+                console.log(`Conta ${acc.id} perdeu sincronia com Unipile`);
+                await (supabase as any)
+                  .from('accounts')
+                  .update({ status: 'DISCONNECTED', updated_at: new Date().toISOString() })
+                  .eq('id', acc.id);
+              }
+            }
             if (unipileData) {
               console.log('DEBUG: unipileData:', JSON.stringify(unipileData));
               if (!accountName || accountName.trim() === '' || accountName !== unipileData.name) {
@@ -93,11 +103,21 @@ const App: React.FC = () => {
               }
               
               // Buscar o perfil do dono para pegar a imagem correta
-              const ownerData = await getAccountOwner(acc.unipile_account_id);
-              if (ownerData && ownerData.profile_picture_url) {
-                avatarUrl = ownerData.profile_picture_url;
-              } else {
-                avatarUrl = unipileData.profile_picture_url || '';
+              try {
+                const ownerData = await getAccountOwner(acc.unipile_account_id);
+                if (ownerData && ownerData.profile_picture_url) {
+                  avatarUrl = ownerData.profile_picture_url;
+                } else {
+                  avatarUrl = unipileData.profile_picture_url || '';
+                }
+              } catch (err) {
+                if (err instanceof UnipileAuthError) {
+                  console.log(`Conta ${acc.id} perdeu sincronia com Unipile (owner)`);
+                  await (supabase as any)
+                    .from('accounts')
+                    .update({ status: 'DISCONNECTED', updated_at: new Date().toISOString() })
+                    .eq('id', acc.id);
+                }
               }
             }
           }
@@ -188,8 +208,26 @@ const App: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const accountId = params.get('account_id');
     const isNewConnection = params.get('flow') === 'new_connection';
+    const reconnectDbId = params.get('reconnect');
 
-    if (accountId && !params.has('reconnect') && !syncedAccountIds.has(accountId) && !isNewConnection) {
+    if (reconnectDbId && accountId && !syncedAccountIds.has(accountId)) {
+      const handleReconnect = async () => {
+        try {
+          await updateAccountUnipileId(reconnectDbId, accountId);
+          setSyncedAccountIds(prev => new Set(prev).add(accountId));
+          setAccountsRefreshKey(prev => prev + 1);
+        } catch (err) {
+          console.error('Erro ao reconectar conta:', err);
+        }
+
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete('account_id');
+        cleanUrl.searchParams.delete('flow');
+        cleanUrl.searchParams.delete('reconnect');
+        window.history.replaceState({}, '', cleanUrl.toString());
+      };
+      handleReconnect();
+    } else if (accountId && !params.has('reconnect') && !syncedAccountIds.has(accountId) && !isNewConnection) {
       const syncAndRefresh = async () => {
         try {
           await syncLinkedInAccount({
@@ -396,6 +434,15 @@ const App: React.FC = () => {
                       <button
                         key={acc.id}
                         onClick={() => {
+                          if (acc.status === 'DISCONNECTED') {
+                            setReconnectAccountId(undefined);
+                            const url = new URL(window.location.href);
+                            url.searchParams.set('reconnect', acc.id);
+                            url.searchParams.set('flow', 'new_connection');
+                            window.history.replaceState({}, '', url.toString());
+                            setIsAuthModalOpen(true);
+                            return;
+                          }
                           setCurrentAccount(acc);
                           setChats(null);
                           setChatRefreshKey(k => k + 1);

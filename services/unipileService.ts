@@ -122,6 +122,16 @@ export interface UnipileAccount {
   profile_picture_url?: string
 }
 
+export class UnipileAuthError extends Error {
+  status: number;
+  accountId: string;
+  constructor(accountId: string, status: number) {
+    super(`Error fetching account ${accountId}: ${status}`);
+    this.status = status;
+    this.accountId = accountId;
+  }
+}
+
 export const getAccountById = async (accountId: string): Promise<UnipileAccount | null> => {
   const MAX_RETRIES = 1;
   let attempt = 0;
@@ -140,6 +150,10 @@ export const getAccountById = async (accountId: string): Promise<UnipileAccount 
       
       console.error(`Error fetching account ${accountId}: ${response.status} ${response.statusText}`);
       
+      if (response.status === 401) {
+        throw new UnipileAuthError(accountId, response.status);
+      }
+      
       if (response.status === 503 && attempt < MAX_RETRIES) {
         attempt++;
         await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
@@ -148,6 +162,7 @@ export const getAccountById = async (accountId: string): Promise<UnipileAccount 
       
       return null;
     } catch (error) {
+      if (error instanceof UnipileAuthError) throw error;
       console.error(`Caught error fetching account ${accountId}:`, error);
       return null;
     }
@@ -173,11 +188,15 @@ export const getAccountOwner = async (accountId: string): Promise<UnipileAccount
     })
 
     if (!response.ok) {
+      if (response.status === 401) {
+        throw new UnipileAuthError(accountId, response.status)
+      }
       return null
     }
 
     return await response.json()
   } catch (error) {
+    if (error instanceof UnipileAuthError) throw error
     return null
   }
 }
@@ -212,6 +231,20 @@ export const getReconnectLink = async (payload: HostedReconnectRequest): Promise
     return await parseJsonResponse(response)
   } catch (error) {
     throw error
+  }
+}
+
+export const updateAccountUnipileId = async (accountId: string, newAccountId: string): Promise<void> => {
+  const headers = await getAuthHeaders()
+  const response = await fetch(getEdgeFunctionUrl('/unipile-accounts-update'), {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ accountId, newAccountId })
+  })
+  const body = await response.text().catch(() => '')
+  console.error('updateAccountUnipileId response:', response.status, body)
+  if (!response.ok) {
+    throw new Error(`Update failed: ${response.status} - ${body}`)
   }
 }
 
