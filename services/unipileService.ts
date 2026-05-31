@@ -727,6 +727,9 @@ export interface UnipileUserProfile {
   connections_count?: number
   follower_count?: number
   title?: string // Para compatibilidade com busca
+  is_relationship?: boolean // true se for contato (1st degree)
+  connected_at?: number // timestamp da conexão
+  invitation?: { type?: 'SENT' | 'RECEIVED'; status?: 'PENDING' | 'IGNORED' | 'WITHDRAWN' }
 }
 
 export interface LinkedInSearchParameter {
@@ -808,7 +811,7 @@ export const performLinkedInSearch = async (payload: LinkedInSearchRequest): Pro
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ limit: 50, ...payload })
     })
 
     return await parseJsonResponse(response)
@@ -827,6 +830,82 @@ export const sendConnectRequest = async (payload: SendConnectRequest): Promise<S
         accountId: payload.account_id,
         attendeeId: payload.attendee_id,
         message: payload.message
+      })
+    })
+    return await parseJsonResponse(response)
+  } catch (error) {
+    throw error
+  }
+}
+
+export interface LinkedInPost {
+  object: string
+  provider: string
+  id: string
+  social_id: string
+  share_url?: string
+  text?: string
+  date?: string
+  parsed_datetime?: string
+  reaction_counter?: number
+  comment_counter?: number
+  repost_counter?: number
+  impressions_counter?: number
+  user_reacted?: string | null
+  author?: {
+    public_identifier?: string
+    id?: string | null
+    name?: string
+    is_company?: boolean
+    headline?: string
+    profile_picture_url?: string
+  }
+  permissions?: {
+    can_react: boolean
+    can_share: boolean
+    can_post_comments: boolean
+  }
+  attachments?: Array<{
+    id?: string
+    type?: string
+    url?: string
+    size?: { height?: number; width?: number }
+    unavailable?: boolean
+  }>
+  is_repost?: boolean
+}
+
+export interface LinkedInPostsResponse {
+  object?: string
+  items?: LinkedInPost[]
+  cursor?: string
+}
+
+export const getLinkedInProfilePosts = async (accountId: string, providerId: string, limit: number = 10): Promise<LinkedInPostsResponse> => {
+  try {
+    const headers = await getAuthHeaders()
+    const url = getEdgeFunctionUrl(`/unipile-linkedin-posts?account_id=${encodeURIComponent(accountId)}&provider_id=${encodeURIComponent(providerId)}&limit=${limit}`)
+    const response = await fetch(url, {
+      method: 'GET',
+      headers
+    })
+    return await parseJsonResponse(response)
+  } catch (error) {
+    throw error
+  }
+}
+
+export const likeLinkedInPost = async (accountId: string, postId: string, reactionType: string = 'like'): Promise<any> => {
+  try {
+    const headers = await getAuthHeaders()
+    const url = getEdgeFunctionUrl('/unipile-linkedin-like')
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        account_id: accountId,
+        post_id: postId,
+        reaction_type: reactionType
       })
     })
     return await parseJsonResponse(response)

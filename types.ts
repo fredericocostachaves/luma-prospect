@@ -93,6 +93,5 @@ export interface FilterState {
   jobTitle: string;
   location: string;
   industry: string;
-  companySize: string;
   keywords: string;
 }

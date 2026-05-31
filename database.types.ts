@@ -15,7 +15,7 @@ export type Database = {
           unipile_account_id: string | null
           user_id: string
           name: string
-          status: 'CREATION_SUCCESS' | 'RECONNECTED'
+          status: 'CREATION_SUCCESS' | 'RECONNECTED' | 'DISCONNECTED'
           initials: string | null
           proxy_settings: Json | null
           created_at: string
@@ -26,7 +26,7 @@ export type Database = {
           unipile_account_id?: string | null
           user_id: string
           name: string
-          status?: 'CREATION_SUCCESS' | 'RECONNECTED'
+          status?: 'CREATION_SUCCESS' | 'RECONNECTED' | 'DISCONNECTED'
           initials?: string | null
           proxy_settings?: Json | null
           created_at?: string
@@ -37,7 +37,7 @@ export type Database = {
           unipile_account_id?: string | null
           user_id?: string
           name?: string
-          status?: 'CREATION_SUCCESS' | 'RECONNECTED'
+          status?: 'CREATION_SUCCESS' | 'RECONNECTED' | 'DISCONNECTED'
           initials?: string | null
           proxy_settings?: Json | null
           created_at?: string

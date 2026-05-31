@@ -2,7 +2,7 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, Plus, Columns, UserPlus, RefreshCw, Check } from 'lucide-react';
 import { supabase } from './utils/supabase';
 import { Database } from './database.types';
-import { listChats, UnipileChatsResponse, syncLinkedInAccount, getAccountById, getAccountOwner, deleteAccount, UnipileAuthError, updateAccountUnipileId } from './services/unipileService';
+import { listChats, UnipileChatsResponse, syncLinkedInAccount, getAccountById, getAccountOwner, UnipileAuthError, updateAccountUnipileId } from './services/unipileService';
 import Login from './components/Login';
 import ResetPassword from './components/ResetPassword';
 
@@ -78,15 +78,14 @@ const App: React.FC = () => {
               unipileData = await getAccountById(acc.unipile_account_id);
             } catch (err) {
               if (err instanceof UnipileAuthError) {
-                console.log(`Conta ${acc.id} perdeu sincronia com Unipile`);
-                await (supabase as any)
+                const { error: updateErr } = await (supabase as any)
                   .from('accounts')
                   .update({ status: 'DISCONNECTED', updated_at: new Date().toISOString() })
                   .eq('id', acc.id);
+                if (updateErr) console.error('Erro ao atualizar status para DISCONNECTED:', updateErr);
               }
             }
             if (unipileData) {
-              console.log('DEBUG: unipileData:', JSON.stringify(unipileData));
               if (!accountName || accountName.trim() === '' || accountName !== unipileData.name) {
                 const oldName = accountName;
                 const oldInitials = accountInitials;
@@ -95,10 +94,11 @@ const App: React.FC = () => {
                 
                 // Update DB if data changed
                 if (oldName !== accountName || oldInitials !== accountInitials) {
-                    await (supabase as any)
+                    const { error: updateErr } = await (supabase as any)
                     .from('accounts')
                     .update({ name: accountName, initials: accountInitials, updated_at: new Date().toISOString() })
                     .eq('id', acc.id);
+                    if (updateErr) console.error('Erro ao atualizar nome/initials:', updateErr);
                 }
               }
               
@@ -112,11 +112,11 @@ const App: React.FC = () => {
                 }
               } catch (err) {
                 if (err instanceof UnipileAuthError) {
-                  console.log(`Conta ${acc.id} perdeu sincronia com Unipile (owner)`);
-                  await (supabase as any)
+                  const { error: updateErr } = await (supabase as any)
                     .from('accounts')
                     .update({ status: 'DISCONNECTED', updated_at: new Date().toISOString() })
                     .eq('id', acc.id);
+                  if (updateErr) console.error('Erro ao atualizar status para DISCONNECTED (owner):', updateErr);
                 }
               }
             }
@@ -227,7 +227,7 @@ const App: React.FC = () => {
         window.history.replaceState({}, '', cleanUrl.toString());
       };
       handleReconnect();
-    } else if (accountId && !params.has('reconnect') && !syncedAccountIds.has(accountId) && !isNewConnection) {
+    } else if (accountId && !params.has('reconnect') && !syncedAccountIds.has(accountId)) {
       const syncAndRefresh = async () => {
         try {
           await syncLinkedInAccount({
@@ -564,7 +564,7 @@ const App: React.FC = () => {
             )}
             {activeTab === Tab.AUDIENCE && (
               <Suspense fallback={<div className="flex items-center justify-center h-96 text-gray-500">Carregando...</div>}>
-                <AudienceFilter />
+                <AudienceFilter currentAccount={currentAccount} currentUserId={currentUserId} />
               </Suspense>
             )}
             {activeTab === Tab.INBOX && (

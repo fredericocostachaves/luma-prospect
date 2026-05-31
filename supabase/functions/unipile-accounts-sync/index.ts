@@ -45,6 +45,53 @@ Deno.serve(async (req) => {
       syncError = `Sync error: ${(syncErr as Error).message}`
     }
 
+    // Busca o nome real da conta no Unipile
+    let accountName = 'LinkedIn'
+    try {
+      const accountUrl = `${UNIPILE_API_URL}/api/v1/accounts/${accountId}`
+      const accountRes = await fetch(accountUrl, {
+        headers: { 'X-API-KEY': UNIPILE_API_KEY, 'accept': 'application/json' }
+      })
+      if (accountRes.ok) {
+        const accountData = await accountRes.json()
+        if (accountData.name) accountName = accountData.name
+      }
+    } catch (_) {
+      // Não crítico, usa o padrão
+    }
+
+    // Apaga contas desconectadas com o mesmo nome antes de cadastrar a nova
+    if (userId && accountName !== 'LinkedIn') {
+      try {
+        const searchUrl = `${SUPABASE_URL}/rest/v1/accounts?user_id=eq.${encodeURIComponent(userId)}&name=eq.${encodeURIComponent(accountName)}&status=eq.DISCONNECTED&select=id,unipile_account_id`
+        const dupeRes = await fetch(searchUrl, {
+          headers: { 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
+        })
+        const dupes = await dupeRes.json() as Array<{ id: string; unipile_account_id?: string | null }>
+
+        if (dupes && dupes.length > 0) {
+          for (const dupe of dupes) {
+            if (dupe.unipile_account_id) {
+              try {
+                await fetch(`${UNIPILE_API_URL}/api/v1/accounts/${dupe.unipile_account_id}`, {
+                  method: 'DELETE',
+                  headers: { 'X-API-KEY': UNIPILE_API_KEY }
+                })
+              } catch (_) {
+                // Não crítico
+              }
+            }
+            await fetch(`${SUPABASE_URL}/rest/v1/accounts?id=eq.${encodeURIComponent(dupe.id)}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` }
+            })
+          }
+        }
+      } catch (_) {
+        // Não crítico, continua
+      }
+    }
+
     // Cadastra ou atualiza no Supabase independente do resultado do sync
     if (userId) {
       const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/accounts?id=eq.${encodeURIComponent(accountId)}`, {
@@ -66,9 +113,9 @@ Deno.serve(async (req) => {
             id: accountId,
             unipile_account_id: accountId,
             user_id: userId,
-            name: 'LinkedIn',
+            name: accountName,
             status: 'CREATION_SUCCESS',
-            initials: 'LI', // Será atualizado via fetchAccounts quando buscar dados do Unipile
+            initials: accountName === 'LinkedIn' ? 'LI' : (accountName.substring(0, 2) || 'LI').toUpperCase(),
           }),
         })
       } else {
@@ -78,7 +125,7 @@ Deno.serve(async (req) => {
             'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ status: 'CREATION_SUCCESS' }),
+          body: JSON.stringify({ status: 'CREATION_SUCCESS', name: accountName }),
         })
       }
     }

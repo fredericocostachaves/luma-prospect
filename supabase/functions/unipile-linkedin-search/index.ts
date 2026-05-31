@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 }
 
-const UNIPILE_API_URL = Deno.env.get('UNIPILE_API_URL') || 'https://api34.unipile.com:16410'
+const UNIPILE_API_URL = Deno.env.get('UNIPILE_API_URL')
 const UNIPILE_API_KEY = Deno.env.get('UNIPILE_API_KEY') || ''
 
 Deno.serve(async (req) => {
@@ -15,8 +15,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = await req.json().catch(() => ({}))
-    const { account_id, ...searchParams } = body
+    const body = await req.json().catch(() => ({})) as Record<string, any>
+    const { account_id, limit, ...searchParams } = body
 
     if (!account_id) {
       return new Response(JSON.stringify({ error: 'Missing account_id' }), {
@@ -26,7 +26,8 @@ Deno.serve(async (req) => {
     }
     
     const queryParams = new URLSearchParams({
-      account_id
+      account_id,
+      ...(limit != null && { limit: String(limit) }),
     })
     
     const apiUrl = `${UNIPILE_API_URL}/api/v1/linkedin/search?${queryParams.toString()}`

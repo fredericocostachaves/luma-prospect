@@ -15,44 +15,35 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = await req.json()
-    
-    const apiUrl = `${UNIPILE_API_URL}/api/v1/users/invite`
+    const url = new URL(req.url)
+    const account_id = url.searchParams.get('account_id')
+    const provider_id = url.searchParams.get('provider_id')
+    const limit = url.searchParams.get('limit') || '10'
+
+    if (!account_id || !provider_id) {
+      return new Response(JSON.stringify({ error: 'Missing account_id or provider_id' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const apiUrl = `${UNIPILE_API_URL}/api/v1/users/${encodeURIComponent(provider_id)}/posts?account_id=${encodeURIComponent(account_id)}&limit=${limit}`
 
     const headers = {
       'X-API-KEY': UNIPILE_API_KEY,
       'accept': 'application/json',
-      'Content-Type': 'application/json',
     }
 
     const response = await fetch(apiUrl, {
-      method: 'POST',
+      method: 'GET',
       headers,
-      body: JSON.stringify(body)
     })
 
     const responseData = await response.json().catch(() => ({}))
+    const data: Record<string, any> = typeof responseData === 'object' && responseData !== null ? responseData as Record<string, any> : {}
 
-    // Retorna 200 sempre — sem 422 no console do browser
-    if (response.ok) {
-      return new Response(JSON.stringify({ status: 'SENT' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    if (response.status === 422) {
-      const alreadyInvited = /already_invited_recently/i.test(JSON.stringify(responseData))
-      return new Response(JSON.stringify({
-        status: alreadyInvited ? 'ALREADY_INVITED' : 'ERROR',
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    return new Response(JSON.stringify({ status: 'ERROR', error: responseData }), {
-      status: 200,
+    return new Response(JSON.stringify(data), {
+      status: response.status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   } catch (error) {

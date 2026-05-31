@@ -16,8 +16,25 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json()
-    
-    const apiUrl = `${UNIPILE_API_URL}/api/v1/users/invite`
+    const { account_id, post_id, reaction_type } = body
+
+    if (!account_id || !post_id) {
+      return new Response(JSON.stringify({ error: 'Missing account_id or post_id' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const apiUrl = `${UNIPILE_API_URL}/api/v1/posts/reaction`
+
+    const requestBody = JSON.stringify({
+      account_id,
+      post_id,
+      reaction_type: reaction_type || 'like',
+    })
+
+    console.log('Request URL:', apiUrl)
+    console.log('Request body:', requestBody)
 
     const headers = {
       'X-API-KEY': UNIPILE_API_KEY,
@@ -28,31 +45,22 @@ Deno.serve(async (req) => {
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body)
+      body: requestBody,
     })
 
-    const responseData = await response.json().catch(() => ({}))
+    const responseText = await response.text()
+    console.log('Response status:', response.status)
+    console.log('Response body:', responseText)
 
-    // Retorna 200 sempre — sem 422 no console do browser
-    if (response.ok) {
-      return new Response(JSON.stringify({ status: 'SENT' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
+    let responseData: any = {}
+    try {
+      responseData = JSON.parse(responseText)
+    } catch {
+      responseData = { raw: responseText }
     }
 
-    if (response.status === 422) {
-      const alreadyInvited = /already_invited_recently/i.test(JSON.stringify(responseData))
-      return new Response(JSON.stringify({
-        status: alreadyInvited ? 'ALREADY_INVITED' : 'ERROR',
-      }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    return new Response(JSON.stringify({ status: 'ERROR', error: responseData }), {
-      status: 200,
+    return new Response(JSON.stringify(responseData), {
+      status: response.ok ? 200 : response.status,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   } catch (error) {
