@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useState} from 'react';
 import {
   Briefcase,
   Building,
+  ChevronDown,
   ExternalLink,
   Filter,
   Heart,
@@ -13,6 +14,7 @@ import {
   Save,
   Search,
   Trash2,
+  Upload,
   UserPlus,
   Users,
   X
@@ -40,7 +42,7 @@ interface AudienceFilterProps {
 }
 
 const AudienceFilter: React.FC<AudienceFilterProps> = ({ currentAccount, currentUserId }) => {
-  const [activeTab, setActiveTab] = useState<'list' | 'search'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'search' | 'csv'>('list');
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<UnipileUserProfile[]>([]);
@@ -48,6 +50,12 @@ const AudienceFilter: React.FC<AudienceFilterProps> = ({ currentAccount, current
   const [savedLeads, setSavedLeads] = useState<any[]>([]);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [listName, setListName] = useState('');
+  const [csvLeads, setCsvLeads] = useState<any[]>([]);
+  const [csvFileName, setCsvFileName] = useState('');
+  const [csvTagName, setCsvTagName] = useState('');
+  const [csvSelected, setCsvSelected] = useState<Set<number>>(new Set());
+  const [isImportingCsv, setIsImportingCsv] = useState(false);
+  const [csvImportError, setCsvImportError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
@@ -310,8 +318,15 @@ const AudienceFilter: React.FC<AudienceFilterProps> = ({ currentAccount, current
         tags: [listName.trim()],
       }));
 
-      const { error } = await (supabase as any).from('leads').insert(leadsToInsert);
-      if (error) throw error;
+      const { data: inserted, error } = await (supabase as any)
+        .from('leads')
+        .insert(leadsToInsert)
+        .select();
+      if (error) {
+        setSearchError(error.message || 'Erro ao salvar leads.');
+        setIsSaving(false);
+        return;
+      }
 
       // Store provider_id in localStorage for lookup after page refresh
       const providerMap = JSON.parse(localStorage.getItem('lead_providers') || '{}');
@@ -321,25 +336,11 @@ const AudienceFilter: React.FC<AudienceFilterProps> = ({ currentAccount, current
         }
       });
       localStorage.setItem('lead_providers', JSON.stringify(providerMap));
-
-      const savedIds = new Set(resolvedProfiles.map(p => (p as any).provider_id || (p as any).id));
-
-      const newSaved = resolvedProfiles.map((p, i) => ({
-        id: Date.now() + i,
-        name: getLeadName(p),
-        title: p.headline || '',
-        company: getCompany(p),
-        location: p.location || '',
-        linkedin_url: p.public_identifier
-          ? `https://www.linkedin.com/in/${p.public_identifier}/`
-          : null,
-        provider_id: p.provider_id || null,
-        public_identifier: p.public_identifier || null,
-        date: new Date().toLocaleDateString('pt-BR'),
-        avatar: getLeadInitials(p),
-        status: 'Disponível',
-        picture_url: getAvatar(p),
-        tags: [listName.trim()],
+      const newSaved = (inserted || []).map((row: any) => ({
+        ...row,
+        date: new Date(row.created_at).toLocaleDateString('pt-BR'),
+        picture_url: row.avatar || row.picture_url || null,
+        avatar: row.avatar || getLeadInitials(row),
       }));
 
       setSavedLeads(prev => [...newSaved, ...prev]);
@@ -348,9 +349,9 @@ const AudienceFilter: React.FC<AudienceFilterProps> = ({ currentAccount, current
       setSelectedLeads(new Set());
       setShowSaveModal(false);
       setListName('');
+      setIsSaving(false);
     } catch (err: any) {
       setSearchError(err.message || 'Erro ao salvar leads.');
-    } finally {
       setIsSaving(false);
     }
   };
@@ -360,7 +361,9 @@ const AudienceFilter: React.FC<AudienceFilterProps> = ({ currentAccount, current
       .from('leads')
       .delete()
       .eq('id', leadId);
-    if (!error) {
+    if (error) {
+      setSearchError('Erro ao excluir lead: ' + (error.message || 'Registro não encontrado.'));
+    } else {
       setSavedLeads(prev => prev.filter(l => l.id !== leadId));
     }
     setOpenMenuId(null);
@@ -535,6 +538,164 @@ const AudienceFilter: React.FC<AudienceFilterProps> = ({ currentAccount, current
     }
   };
 
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [tagFilter, setTagFilter] = useState('');
+
+  const existingTags = React.useMemo(() => {
+    const tags = new Set<string>();
+    savedLeads.forEach((l: any) => {
+      (l.tags || []).forEach((t: string) => tags.add(t));
+    });
+    return Array.from(tags).sort();
+  }, [savedLeads]);
+
+  const filteredTags = React.useMemo(() => {
+    if (!tagFilter) return existingTags;
+    return existingTags.filter(t => t.toLowerCase().includes(tagFilter.toLowerCase()));
+  }, [existingTags, tagFilter]);
+
+  const parseCsvText = (text: string): any[] => {
+    const lines = text.trim().split('\n');
+    if (lines.length < 2) return [];
+
+    const parseLine = (line: string): string[] => {
+      const result: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          inQuotes = !inQuotes;
+        } else if (ch === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += ch;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    };
+
+    const header = parseLine(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, ''));
+    const rows: any[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseLine(lines[i]);
+      if (values.length === 0 || values.every(v => !v)) continue;
+      const obj: any = {};
+      header.forEach((h, idx) => {
+        obj[h] = values[idx] || '';
+      });
+      rows.push(obj);
+    }
+    return rows;
+  };
+
+  const handleCsvFile = (file: File) => {
+    if (!file.name.endsWith('.csv')) {
+      setCsvImportError('Formato inválido. Selecione um arquivo .csv.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const parsed = parseCsvText(text);
+      if (parsed.length === 0) {
+        setCsvImportError('Arquivo vazio ou formato inválido.');
+        return;
+      }
+      const required = ['nome', 'headline', 'local', 'perfil'];
+      const headers = Object.keys(parsed[0]);
+      const missing = required.filter(r => !headers.includes(r));
+      if (missing.length > 0) {
+        setCsvImportError(`Colunas obrigatórias não encontradas: ${missing.join(', ')}. Colunas encontradas: ${headers.join(', ')}`);
+        return;
+      }
+      setCsvLeads(parsed);
+      setCsvFileName(file.name);
+      setCsvSelected(new Set(parsed.map((_, i) => i)));
+      setCsvImportError(null);
+    };
+    reader.onerror = () => {
+      setCsvImportError('Erro ao ler o arquivo.');
+    };
+    reader.readAsText(file);
+  };
+
+  const handleImportCsv = async () => {
+    if (!currentUserId || !currentAccount?.id) {
+      setCsvImportError('Nenhuma conta selecionada.');
+      return;
+    }
+    if (csvSelected.size === 0) {
+      setCsvImportError('Selecione ao menos um lead para importar.');
+      return;
+    }
+    if (!csvTagName.trim()) {
+      setCsvImportError('Defina uma tag para identificar os leads.');
+      return;
+    }
+    setIsImportingCsv(true);
+    setCsvImportError(null);
+    try {
+      const existingUrls = new Set(
+        savedLeads.map((l: any) => l.linkedin_url).filter(Boolean)
+      );
+      const existingNames = new Set(
+        savedLeads.map((l: any) => l.name?.toLowerCase()).filter(Boolean)
+      );
+      const selectedLeadsData = csvLeads.filter((_, i) => csvSelected.has(i));
+      const deduped = selectedLeadsData.filter(lead => {
+        const url = (lead.perfil || '').trim();
+        const name = (lead.nome || '').trim().toLowerCase();
+        if (url && existingUrls.has(url)) return false;
+        return !(name && existingNames.has(name));
+
+      });
+      if (deduped.length === 0) {
+        setCsvImportError('Todos os leads selecionados já foram importados anteriormente.');
+        setIsImportingCsv(false);
+        return;
+      }
+      const leadsToInsert = deduped.map(lead => ({
+        user_id: currentUserId,
+        account_id: currentAccount.id,
+        name: lead.nome || 'Sem nome',
+        title: lead.headline || null,
+        location: lead.local || null,
+        linkedin_url: lead.perfil || null,
+        status: 'Disponível',
+        tags: [csvTagName.trim()],
+      }));
+
+      const { data: inserted, error } = await (supabase as any)
+        .from('leads')
+        .insert(leadsToInsert)
+        .select();
+      if (error) {
+        setCsvImportError(error.message || 'Erro ao importar leads.');
+        setIsImportingCsv(false);
+        return;
+      }
+
+      const newSaved = (inserted || []).map((row: any) => ({
+        ...row,
+        date: new Date(row.created_at).toLocaleDateString('pt-BR'),
+      }));
+
+      setSavedLeads(prev => [...newSaved, ...prev]);
+      setCsvLeads([]);
+      setCsvFileName('');
+      setCsvTagName('');
+      setCsvSelected(new Set());
+      setActiveTab('list');
+      setIsImportingCsv(false);
+    } catch (err: any) {
+      setCsvImportError(err.message || 'Erro ao importar leads.');
+      setIsImportingCsv(false);
+    }
+  };
+
   const handleOpenMenu = (e: React.MouseEvent, lead: any) => {
     e.stopPropagation();
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -583,6 +744,17 @@ const AudienceFilter: React.FC<AudienceFilterProps> = ({ currentAccount, current
           >
             <Search className="w-4 h-4" />
             Nova Busca (LinkedIn)
+          </button>
+          <button
+            onClick={() => setActiveTab('csv')}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-all ${
+              activeTab === 'csv'
+                ? 'bg-white text-brand-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Upload className="w-4 h-4" />
+            Importar CSV
           </button>
         </div>
 
@@ -923,7 +1095,7 @@ const AudienceFilter: React.FC<AudienceFilterProps> = ({ currentAccount, current
 
       {/* --- CONTENT: NEW SEARCH FORM --- */}
       {activeTab === 'search' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 max-w-4xl animate-in fade-in slide-in-from-bottom-2 duration-300">
           <div className="flex items-center gap-3 mb-6 border-b border-gray-100 pb-4">
             <div className="bg-brand-50 p-2 rounded-lg">
               <Filter className="w-6 h-6 text-brand-600" />
@@ -1043,6 +1215,218 @@ const AudienceFilter: React.FC<AudienceFilterProps> = ({ currentAccount, current
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* --- CONTENT: CSV IMPORT --- */}
+      {activeTab === 'csv' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 max-w-4xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="flex items-center gap-3 mb-6 border-b border-gray-100 pb-4">
+            <div className="bg-brand-50 p-2 rounded-lg">
+              <Upload className="w-6 h-6 text-brand-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">Importar Leads de CSV</h2>
+              <p className="text-sm text-gray-500">
+                Faça upload de um arquivo CSV com colunas: nome, headline, local, perfil
+              </p>
+            </div>
+          </div>
+
+          {csvImportError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
+              <X className="w-4 h-4 shrink-0" />
+              {csvImportError}
+              <button onClick={() => setCsvImportError(null)} className="ml-auto text-red-500 hover:text-red-700">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {csvLeads.length === 0 ? (
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files[0];
+                if (file) handleCsvFile(file);
+              }}
+              className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-brand-400 transition-colors cursor-pointer"
+              onClick={() => document.getElementById('csv-input')?.click()}
+            >
+              <div className="bg-gray-100 p-4 rounded-full inline-flex mb-4">
+                <Upload className="w-8 h-8 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-1">
+                Clique para selecionar ou arraste o arquivo
+              </h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Formatos aceitos: .csv (colunas: nome, headline, local, perfil)
+              </p>
+              <input
+                id="csv-input"
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleCsvFile(file);
+                }}
+              />
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  document.getElementById('csv-input')?.click();
+                }}
+                className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors shadow-sm"
+              >
+                <Upload className="w-4 h-4" />
+                Selecionar Arquivo
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Upload className="w-4 h-4 text-brand-600" />
+                  <span className="font-medium">{csvFileName}</span>
+                  <span className="text-gray-400">— {csvLeads.length} leads encontrados</span>
+                </div>
+                <button
+                  onClick={() => { setCsvLeads([]); setCsvFileName(''); setCsvImportError(null); setCsvSelected(new Set()); }}
+                  className="text-xs text-gray-500 hover:text-gray-700 underline"
+                >
+                  Remover arquivo
+                </button>
+              </div>
+
+              <div className="overflow-x-auto border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-200 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-3 w-10">
+                        <input
+                          type="checkbox"
+                          checked={csvSelected.size === csvLeads.length && csvLeads.length > 0}
+                          onChange={() => {
+                            if (csvSelected.size === csvLeads.length) {
+                              setCsvSelected(new Set());
+                            } else {
+                              setCsvSelected(new Set(csvLeads.map((_, i) => i)));
+                            }
+                          }}
+                          className="w-4 h-4 text-brand-600 border-gray-300 rounded focus:ring-brand-500 cursor-pointer"
+                        />
+                      </th>
+                      <th className="px-4 py-3 whitespace-nowrap">Nome</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Headline</th>
+                      <th className="px-4 py-3 whitespace-nowrap">Localização</th>
+                      <th className="px-4 py-3 whitespace-nowrap">LinkedIn</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {csvLeads.map((lead, idx) => (
+                      <tr key={idx} className={`hover:bg-gray-50/80 transition-colors ${csvSelected.has(idx) ? 'bg-blue-50/30' : ''}`}>
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={csvSelected.has(idx)}
+                            onChange={() => {
+                              setCsvSelected(prev => {
+                                const next = new Set(prev);
+                                if (next.has(idx)) next.delete(idx); else next.add(idx);
+                                return next;
+                              });
+                            }}
+                            className="w-4 h-4 text-brand-600 border-gray-300 rounded focus:ring-brand-500 cursor-pointer"
+                          />
+                        </td>
+                        <td className="px-4 py-3 font-medium text-gray-800 truncate max-w-[160px]">{lead.nome}</td>
+                        <td className="px-4 py-3 text-gray-600 text-xs max-w-[200px] truncate">{lead.headline || '—'}</td>
+                        <td className="px-4 py-3 text-gray-600 truncate max-w-[130px]">{lead.local || '—'}</td>
+                        <td className="px-4 py-3">
+                          {lead.perfil ? (
+                            <a href={lead.perfil} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 hover:text-blue-800 text-xs font-medium">
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              Perfil
+                            </a>
+                          ) : (
+                            <span className="text-gray-400 text-xs">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600">
+                  {csvSelected.size} de {csvLeads.length} lead{csvLeads.length !== 1 ? 's' : ''} selecionado{csvSelected.size !== 1 ? 's' : ''}
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 pt-2">
+                <div className="flex-1 w-full sm:w-auto relative">
+                  <label className="text-xs font-medium text-gray-500 mb-1 block">Tag para identificar os leads</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={csvTagName}
+                      onChange={(e) => { setCsvTagName(e.target.value); setTagFilter(e.target.value); setShowTagDropdown(true); }}
+                      onFocus={() => { setTagFilter(csvTagName); setShowTagDropdown(true); }}
+                      onBlur={() => setTimeout(() => setShowTagDropdown(false), 200)}
+                      placeholder="ex: Leads LinkedIn"
+                      className="w-full sm:w-64 px-4 py-2 pr-8 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none transition-all text-sm"
+                    />
+                    <ChevronDown
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 cursor-pointer"
+                      onClick={() => setShowTagDropdown(!showTagDropdown)}
+                    />
+                    {showTagDropdown && filteredTags.length > 0 && (
+                      <div className="absolute z-10 mt-1 w-full sm:w-64 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                        {filteredTags.map(tag => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onMouseDown={() => { setCsvTagName(tag); setShowTagDropdown(false); }}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${csvTagName === tag ? 'bg-brand-50 text-brand-700 font-medium' : 'text-gray-700'}`}
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2 self-end">
+                  <button
+                    onClick={() => { setCsvLeads([]); setCsvFileName(''); setCsvImportError(null); setCsvSelected(new Set()); }}
+                    className="px-4 py-2 text-sm font-semibold text-gray-600 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleImportCsv}
+                    disabled={isImportingCsv || csvSelected.size === 0 || !csvTagName.trim()}
+                    className="flex items-center gap-2 px-6 py-2 text-sm font-semibold text-white bg-brand-600 rounded-lg hover:bg-brand-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isImportingCsv ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Importando...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Importar {csvSelected.size} lead{csvSelected.size !== 1 ? 's' : ''}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
