@@ -1,34 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Users, Send, MessageCircle, Percent, AlertTriangle, Ban, DollarSign, FileText, Video } from 'lucide-react';
+import supabase from '../utils/supabase';
 
-// --- MOCK DATA FOR CHARTS ---
-const chartData = [
-  { name: 'Seg', sent: 40, accepted: 24, replied: 10 },
-  { name: 'Ter', sent: 30, accepted: 13, replied: 5 },
-  { name: 'Qua', sent: 50, accepted: 30, replied: 15 },
-  { name: 'Qui', sent: 45, accepted: 28, replied: 12 },
-  { name: 'Sex', sent: 60, accepted: 40, replied: 20 },
-  { name: 'Sab', sent: 20, accepted: 10, replied: 2 },
-  { name: 'Dom', sent: 15, accepted: 8, replied: 1 },
-];
-
-// --- MOCK DATA FOR ACCOUNTS TABLE ---
 interface AccountPerf {
   id: string;
   name: string;
   initials: string;
   status: 'active' | 'restricted' | 'disconnected';
-  // Base metrics (daily average roughly)
-  baseInvites: number;
-  baseConnections: number;
-  baseMessages: number;
-  baseReplies: number;
-  baseProposals: number;
-  baseMeetings: number;
-  baseSales: number;
+  totalLeads: number;
+  totalMessages: number;
+  totalReplies: number;
+  totalProposals: number;
+  totalMeetings: number;
+  totalSales: number;
 }
-
 
 type TimeRange = '1d' | '3d' | '7d' | '30d' | '3m' | '6m' | '12m';
 
@@ -56,37 +42,162 @@ interface AccountFromApp {
 
 interface DashboardProps {
   accounts?: AccountFromApp[];
+  currentUserId?: string | null;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ accounts = [] }) => {
+const Dashboard: React.FC<DashboardProps> = ({ accounts = [], currentUserId }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
 
-  // Map App accounts to AccountPerf for the table, matching with possible performance data
-  const displayAccounts: AccountPerf[] = accounts.map(acc => {
-    // Map status from App strings to Dashboard status keys
-    const statusMap: Record<string, 'active' | 'restricted' | 'disconnected'> = {
-      'CREATION_SUCCESS': 'active',
-      'RECONNECTED': 'disconnected',
-      'DISCONNECTED': 'disconnected'
+  const [totalLeads, setTotalLeads] = useState(0);
+  const [totalWithProviderId, setTotalWithProviderId] = useState(0);
+  const [totalReplies, setTotalReplies] = useState(0);
+  const [perfData, setPerfData] = useState<Record<string, any>>({});
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const { count: leadsCount } = await supabase
+          .from('leads')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', currentUserId);
+
+        const { count: leadsWithProvider } = await supabase
+          .from('leads')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', currentUserId)
+          .not('provider_id', 'is', null);
+
+        const { count: inboundMessages } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', currentUserId)
+          .eq('direction', 'inbound');
+
+        setTotalLeads(leadsCount || 0);
+        setTotalWithProviderId(leadsWithProvider || 0);
+        setTotalReplies(inboundMessages || 0);
+
+        const perfMap: Record<string, any> = {};
+        for (const acc of accounts) {
+          const { count: accLeads } = await supabase
+            .from('leads')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', currentUserId)
+            .eq('account_id', acc.id);
+
+          const { count: accMsgs } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', currentUserId)
+            .eq('account_id', acc.id)
+            .eq('direction', 'outbound');
+
+          const { count: accReplies } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', currentUserId)
+            .eq('account_id', acc.id)
+            .eq('direction', 'inbound');
+
+          const { count: accDeals } = await supabase
+            .from('pipeline_deals')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', currentUserId)
+            .eq('account_id', acc.id);
+
+          perfMap[acc.id] = {
+            leads: accLeads || 0,
+            messages: accMsgs || 0,
+            replies: accReplies || 0,
+            deals: accDeals || 0,
+          };
+        }
+        setPerfData(perfMap);
+
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+        const startStr = sevenDaysAgo.toISOString();
+
+        const { data: leadsByDay } = await supabase
+          .from('leads')
+          .select('created_at')
+          .eq('user_id', currentUserId)
+          .gte('created_at', startStr);
+
+        const { data: msgsByDay } = await supabase
+          .from('messages')
+          .select('created_at, direction')
+          .eq('user_id', currentUserId)
+          .gte('created_at', startStr);
+
+        const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
+        const dayMap: Record<string, { sent: number; replied: number }> = {};
+
+        for (let i = 0; i < 7; i++) {
+          const d = new Date();
+          d.setDate(d.getDate() - (6 - i));
+          const key = dayNames[d.getDay()];
+          dayMap[key] = { sent: 0, replied: 0 };
+        }
+
+        (leadsByDay || []).forEach((l: any) => {
+          const d = new Date(l.created_at);
+          const key = dayNames[d.getDay()];
+          if (dayMap[key]) dayMap[key].sent++;
+        });
+
+        (msgsByDay || []).forEach((m: any) => {
+          const d = new Date(m.created_at);
+          const key = dayNames[d.getDay()];
+          if (dayMap[key] && m.direction === 'inbound') {
+            dayMap[key].replied++;
+          }
+        });
+
+        const chart = Object.entries(dayMap).map(([name, vals]) => ({
+          name,
+          sent: vals.sent,
+          accepted: Math.round(vals.sent * 0.4),
+          replied: vals.replied,
+        }));
+        setChartData(chart);
+      } catch (e) {
+        console.error('Dashboard fetch error:', e);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    // Default performance data for accounts
+    fetchData();
+  }, [currentUserId, accounts]);
+
+  const statusMap: Record<string, 'active' | 'restricted' | 'disconnected'> = {
+    'CREATION_SUCCESS': 'active',
+    'RECONNECTED': 'disconnected',
+    'DISCONNECTED': 'disconnected'
+  };
+
+  const displayAccounts: AccountPerf[] = accounts.map(acc => {
+    const pd = perfData[acc.id] || { leads: 0, messages: 0, replies: 0, deals: 0 };
     return {
       id: acc.id,
       name: acc.name,
       initials: acc.initials,
       status: statusMap[acc.status] || 'disconnected',
-      baseInvites: 10,
-      baseConnections: 4,
-      baseMessages: 5,
-      baseReplies: 1,
-      baseProposals: 0,
-      baseMeetings: 0,
-      baseSales: 0
+      totalLeads: pd.leads,
+      totalMessages: pd.messages,
+      totalReplies: pd.replies,
+      totalProposals: 0,
+      totalMeetings: 0,
+      totalSales: 0,
     };
   });
 
-  // Helper to simulate data scaling based on time range
   const getMultiplier = (range: TimeRange) => {
     switch(range) {
       case '1d': return 1;
@@ -102,15 +213,23 @@ const Dashboard: React.FC<DashboardProps> = ({ accounts = [] }) => {
 
   const multiplier = getMultiplier(timeRange);
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-gray-500 text-sm">Carregando dados...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       
       {/* KPI Cards (Global) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Total de Leads" value={(1240 * (multiplier > 7 ? multiplier/10 : 1)).toFixed(0)} sub="+12% cresc." icon={Users} color="blue" />
-        <StatCard title="Conexões Enviadas" value={(845 * (multiplier > 7 ? multiplier/10 : 1)).toFixed(0)} sub="68% entregue" icon={Send} color="purple" />
-        <StatCard title="Taxa de Aceite Média" value="42%" sub="+5% vs média" icon={Percent} color="green" />
-        <StatCard title="Respostas Totais" value={(128 * (multiplier > 7 ? multiplier/10 : 1)).toFixed(0)} sub="Pipeline Ativo" icon={MessageCircle} color="orange" />
+        <StatCard title="Total de Leads" value={totalLeads.toLocaleString('pt-BR')} sub="Base total" icon={Users} color="blue" />
+        <StatCard title="Conexões Enviadas" value={totalWithProviderId.toLocaleString('pt-BR')} sub="Com perfil identificado" icon={Send} color="purple" />
+        <StatCard title="Taxa de Aceite Média" value="--" sub="Aguardando dados" icon={Percent} color="green" />
+        <StatCard title="Respostas Totais" value={totalReplies.toLocaleString('pt-BR')} sub="Mensagens recebidas" icon={MessageCircle} color="orange" />
       </div>
 
       {/* Operations Table Section */}
@@ -154,11 +273,9 @@ const Dashboard: React.FC<DashboardProps> = ({ accounts = [] }) => {
             <thead className="bg-gray-50 text-gray-500 font-medium uppercase text-xs">
               <tr>
                 <th className="px-6 py-4">Conta / Status</th>
-                <th className="px-4 py-4 text-center text-blue-600 bg-blue-50/30">Convites</th>
-                <th className="px-4 py-4 text-center text-blue-600 bg-blue-50/30">Conexões</th>
-                <th className="px-4 py-4 text-center text-blue-600 bg-blue-50/30">% Aceite</th>
-                <th className="px-4 py-4 text-center text-purple-600 bg-purple-50/30">Msgs Env.</th>
-                <th className="px-4 py-4 text-center text-purple-600 bg-purple-50/30">Respostas</th>
+                <th className="px-4 py-4 text-center text-blue-600 bg-blue-50/30">Leads</th>
+                <th className="px-4 py-4 text-center text-blue-600 bg-blue-50/30">Msgs Env.</th>
+                <th className="px-4 py-4 text-center text-blue-600 bg-blue-50/30">Respostas</th>
                 <th className="px-4 py-4 text-center border-l border-gray-100" title="Tag: Proposta Enviada">
                   <div className="flex items-center justify-center gap-1"><FileText className="w-3 h-3"/> Propostas</div>
                 </th>
@@ -172,19 +289,12 @@ const Dashboard: React.FC<DashboardProps> = ({ accounts = [] }) => {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {displayAccounts.map((acc) => {
-                // Calculate scaled metrics
-                const invites = Math.floor(acc.baseInvites * multiplier);
-                const connections = Math.floor(acc.baseConnections * multiplier);
-                const rate = invites > 0 ? Math.round((connections / invites) * 100) : 0;
-                const messages = Math.floor(acc.baseMessages * multiplier);
-                const replies = Math.floor(acc.baseReplies * multiplier);
-                const proposals = Math.floor(acc.baseProposals * multiplier);
-                const meetings = Math.floor(acc.baseMeetings * multiplier);
-                const sales = Math.floor(acc.baseSales * multiplier);
+                const leads = Math.floor(acc.totalLeads * (multiplier > 7 ? multiplier/7 : 1));
+                const messages = Math.floor(acc.totalMessages * (multiplier > 7 ? multiplier/7 : 1));
+                const replies = Math.floor(acc.totalReplies * (multiplier > 7 ? multiplier/7 : 1));
 
                 return (
                   <tr key={acc.id} className="hover:bg-gray-50/50 transition-colors">
-                    {/* Account Column */}
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold ${
@@ -218,25 +328,13 @@ const Dashboard: React.FC<DashboardProps> = ({ accounts = [] }) => {
                       </div>
                     </td>
 
-                    {/* Funnel Metrics */}
-                    <td className="px-4 py-4 text-center font-medium text-gray-600 bg-blue-50/10">{invites}</td>
-                    <td className="px-4 py-4 text-center font-medium text-gray-600 bg-blue-50/10">{connections}</td>
-                    <td className="px-4 py-4 text-center font-medium bg-blue-50/10">
-                      <span className={`px-2 py-1 rounded text-xs font-bold ${
-                        rate >= 40 ? 'bg-green-100 text-green-700' : rate >= 20 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
-                      }`}>
-                        {rate}%
-                      </span>
-                    </td>
-
-                    {/* Engagement Metrics */}
+                    <td className="px-4 py-4 text-center font-medium text-gray-600 bg-blue-50/10">{leads}</td>
                     <td className="px-4 py-4 text-center font-medium text-gray-600 bg-purple-50/10">{messages}</td>
                     <td className="px-4 py-4 text-center font-medium text-gray-600 bg-purple-50/10">{replies}</td>
 
-                    {/* Tag Conversion Metrics */}
-                    <td className="px-4 py-4 text-center font-medium text-gray-700 border-l border-gray-100">{proposals}</td>
-                    <td className="px-4 py-4 text-center font-medium text-gray-700">{meetings}</td>
-                    <td className="px-4 py-4 text-center font-bold text-green-600 bg-green-50/10">{sales}</td>
+                    <td className="px-4 py-4 text-center font-medium text-gray-700 border-l border-gray-100">{acc.totalProposals}</td>
+                    <td className="px-4 py-4 text-center font-medium text-gray-700">{acc.totalMeetings}</td>
+                    <td className="px-4 py-4 text-center font-bold text-green-600 bg-green-50/10">{acc.totalSales}</td>
                   </tr>
                 );
               })}
@@ -248,7 +346,7 @@ const Dashboard: React.FC<DashboardProps> = ({ accounts = [] }) => {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Visão Geral de Atividade (Agregado)</h3>
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Leads Adicionados (7 dias)</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData}>
@@ -256,15 +354,15 @@ const Dashboard: React.FC<DashboardProps> = ({ accounts = [] }) => {
                 <XAxis dataKey="name" axisLine={false} tickLine={false} />
                 <YAxis axisLine={false} tickLine={false} />
                 <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                <Bar dataKey="sent" fill="#93c5fd" radius={[4, 4, 0, 0]} name="Enviados" />
-                <Bar dataKey="accepted" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Aceitos" />
+                <Bar dataKey="sent" fill="#93c5fd" radius={[4, 4, 0, 0]} name="Leads" />
+                <Bar dataKey="accepted" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Estimado" />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-          <h3 className="text-lg font-bold text-gray-800 mb-4">Tendência de Respostas</h3>
+          <h3 className="text-lg font-bold text-gray-800 mb-4">Respostas Recebidas (7 dias)</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>

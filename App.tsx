@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, Plus, Columns, UserPlus, RefreshCw, Check } from 'lucide-react';
+import { LayoutDashboard, Users, Workflow, Inbox as InboxIcon, Menu, Settings, LogOut, Plus, Columns, UserPlus, RefreshCw, Check, Heart } from 'lucide-react';
 import { supabase } from './utils/supabase';
 import { Database } from './database.types';
 import { listChats, UnipileChatsResponse, syncLinkedInAccount, getAccountById, getAccountOwner, UnipileAuthError, updateAccountUnipileId } from './services/unipileService';
@@ -14,10 +14,12 @@ const Inbox = lazy(() => import('./components/Inbox'));
 const Dashboard = lazy(() => import('./components/Dashboard'));
 const LinkedInAuth = lazy(() => import('./components/LinkedInAuth'));
 const Invitations = lazy(() => import('./components/Invitations'));
+const AutomationRoutine = lazy(() => import('./components/AutomationRoutine'));
 
 enum Tab {
   DASHBOARD = 'Painel de Controle',
   CAMPAIGNS = 'Campanhas',
+  ROUTINE = 'Rotina',
   AUDIENCE = 'Audiência & Listas',
   INBOX = 'Caixa de Entrada',
   PIPELINE = 'Pipeline de Vendas',
@@ -396,6 +398,7 @@ const App: React.FC = () => {
             <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-2">Geral</p>
             <NavItem tab={Tab.DASHBOARD} icon={LayoutDashboard} label="Painel" />
             <NavItem tab={Tab.CAMPAIGNS} icon={Workflow} label="Campanhas" />
+            <NavItem tab={Tab.ROUTINE} icon={Heart} label="Rotina" />
             
             <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-6">Vendas</p>
             <NavItem tab={Tab.AUDIENCE} icon={Users} label="Audiência" />
@@ -538,6 +541,7 @@ const App: React.FC = () => {
                 <p className="text-gray-500 mt-1">
                   {activeTab === Tab.DASHBOARD && `Visão geral para ${currentAccount?.unipile_account_id || currentAccount?.name || 'sua conta'}`}
                   {activeTab === Tab.CAMPAIGNS && 'Crie e gerencie seus fluxos de automação.'}
+                  {activeTab === Tab.ROUTINE && 'Automatize visitas a perfis e curtidas em posts dos seus leads.'}
                   {activeTab === Tab.AUDIENCE && 'Encontre e importe leads usando filtros.'}
                   {activeTab === Tab.INBOX && 'Gerencie mensagens não lidas e respostas.'}
                   {activeTab === Tab.PIPELINE && 'Acompanhe suas oportunidades de venda.'}
@@ -554,12 +558,17 @@ const App: React.FC = () => {
 
             {activeTab === Tab.DASHBOARD && (
               <Suspense fallback={<div className="flex items-center justify-center h-96 text-gray-500">Carregando...</div>}>
-                <Dashboard accounts={accounts} />
+                <Dashboard accounts={accounts} currentUserId={currentUserId} />
               </Suspense>
             )}
             {activeTab === Tab.CAMPAIGNS && (
               <Suspense fallback={<div className="flex items-center justify-center h-96 text-gray-500">Carregando...</div>}>
                 <CampaignBuilder />
+              </Suspense>
+            )}
+            {activeTab === Tab.ROUTINE && (
+              <Suspense fallback={<div className="flex items-center justify-center h-96 text-gray-500">Carregando...</div>}>
+                <AutomationRoutine currentAccount={currentAccount} currentUserId={currentUserId} />
               </Suspense>
             )}
             {activeTab === Tab.AUDIENCE && (

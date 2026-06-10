@@ -89,6 +89,8 @@ export type Database = {
           company: string | null
           location: string | null
           linkedin_url: string | null
+          provider_id: string | null
+          public_identifier: string | null
           status: string | null
           avatar: string | null
           tags: string[] | null
@@ -103,6 +105,8 @@ export type Database = {
           company?: string | null
           location?: string | null
           linkedin_url?: string | null
+          provider_id?: string | null
+          public_identifier?: string | null
           status?: string | null
           avatar?: string | null
           tags?: string[] | null
@@ -117,6 +121,8 @@ export type Database = {
           company?: string | null
           location?: string | null
           linkedin_url?: string | null
+          provider_id?: string | null
+          public_identifier?: string | null
           status?: string | null
           avatar?: string | null
           tags?: string[] | null
